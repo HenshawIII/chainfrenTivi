@@ -51,7 +51,7 @@ import { deleteAsset, getAssets } from '@/features/assetsAPI';
 import { resetAssetStatus } from '@/features/assetsSlice';
 import { UpdateLivestream } from './UpdateLivestream';
 import { CustomizeChannelDialog } from './Dialog';
-import axios from 'axios';
+import { deleteStream as deleteStreamFromSupabase, deleteVideo as deleteVideoFromSupabase } from '@/lib/supabase-service';
 
 const listItemClassNames = {
   option: 'flex items-center text-lg px-5 py-2 hover:bg-white/10 cursor-pointer text-white',
@@ -105,12 +105,9 @@ export const Popup = ({ playbackId, streamId }: PopupProps) => {
   const confirmDelete = async () => {
     setIsLoading(true);
     try {
-      // First, make a request to the `/deletestream` endpoint with the playbackId
-      const response = await axios.delete(`https://chaintv.onrender.com/api/streams/deletestream?playbackId=${playbackId}`);
-      if (response.status !== 200) {
-        throw new Error(response.data.error || 'Failed to delete stream from external system');
-      }
-      // If the above request is successful, proceed to delete the stream from the Redux store
+      // Delete stream from Supabase
+      await deleteStreamFromSupabase(playbackId);
+      // If the above request is successful, proceed to delete the stream from the Redux store (Livepeer)
       await dispatch(deleteStream(streamId)).unwrap();
       toast.success('Channel deleted successfully');
       dispatch(resetStreamStatus());
@@ -186,13 +183,9 @@ export const AssetPopup = ({ asset }: AssetPopProps) => {
   const confirmDelete = async () => {
     setIsLoading(true);
     try {
-      // First, make a request to the `/deletestream` endpoint with the playbackId
-      const response = await axios.delete(
-        `https://chaintv.onrender.com/api/videos/deletevideo?playbackId=${asset.playbackId}`,
-      );
-      if (response.status !== 200) {
-        throw new Error(response.data.error || 'Failed to delete stream from external system');
-      }
+      // Delete video from Supabase
+      await deleteVideoFromSupabase(asset.playbackId);
+      // If the above request is successful, proceed to delete the asset from Livepeer
       await dispatch(deleteAsset(asset.id)).unwrap();
       toast.success('Asset deleted successfully');
       dispatch(resetAssetStatus());
@@ -200,7 +193,7 @@ export const AssetPopup = ({ asset }: AssetPopProps) => {
       dispatch(getAssets());
       setAlertOpen(false); // close the dialog after successful delete
     } catch (err: any) {
-      toast.error(error || 'Failed to delete asset');
+      toast.error(err.message || error || 'Failed to delete asset');
     }
     setIsLoading(false);
   };

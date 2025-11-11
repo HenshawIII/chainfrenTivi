@@ -8,6 +8,7 @@ import { Copy, ExternalLink } from 'lucide-react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '@/store/store';
 import { fetchProfile, updateProfile, createProfile, ProfileData } from '@/features/profileAPI';
+import { uploadImage } from '@/lib/supabase-service';
 
 export function ProfileCustomization() {
   const { user } = usePrivy();
@@ -117,18 +118,32 @@ export function ProfileCustomization() {
     }));
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProfileData(prev => ({
-        ...prev,
-        avatar: reader.result as string
-      }));
-    };
-    reader.readAsDataURL(file);
+    // Show loading state
+    const prevAvatar = profileData.avatar;
+    setProfileData(prev => ({ ...prev, avatar: '' }));
+
+    try {
+      const imageUrl = await uploadImage(file, "user-avatars");
+      
+      if (imageUrl) {
+        setProfileData(prev => ({
+          ...prev,
+          avatar: imageUrl
+        }));
+        toast.success('Avatar uploaded successfully');
+      } else {
+        setProfileData(prev => ({ ...prev, avatar: prevAvatar }));
+        toast.error('Failed to upload avatar');
+      }
+    } catch (error: any) {
+      console.error('Error uploading avatar:', error);
+      setProfileData(prev => ({ ...prev, avatar: prevAvatar }));
+      toast.error(error.message || 'Failed to upload avatar');
+    }
   };
 
   const validateForm = (): boolean => {

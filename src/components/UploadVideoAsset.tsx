@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { useDispatch, useSelector } from 'react-redux';
 import { getAssets } from '@/features/assetsAPI';
 import { AppDispatch, RootState } from '@/store/store';
-import axios from 'axios';
+import { createVideo } from '@/lib/supabase-service';
 import InputField from './ui/InputField';
 
 type viewMode = 'free' | 'one-time' | 'monthly';
@@ -96,20 +96,30 @@ export default function UploadVideoAsset({ onClose }: { onClose: () => void }) {
       const { playbackId, name } = response.data.asset;
       console.log('response2', playbackId, name);
 
-      const secondResponse = await axios.post(`https://chaintv.onrender.com/api/videos/addvideo`, {
-        playbackId,
-        viewMode,
-        amount,
-        assetName: name || title,
-        creatorId: user?.wallet?.chainType === 'solana' && user?.wallet?.address
-          ? user.wallet.address
-          : solanaWalletAddress,
-        donation: presetValues,
-      });
-      if (secondResponse.status === 200) {
-        console.log('Data sent successfully:', secondResponse.data);
-      } else if (secondResponse.status !== 200) {
-        console.error('Error sending data:', secondResponse.data);
+      // Save video metadata to Supabase
+      const creatorId = user?.wallet?.chainType === 'solana' && user?.wallet?.address
+        ? user.wallet.address
+        : solanaWalletAddress;
+
+      if (!creatorId) {
+        throw new Error('Creator ID is required');
+      }
+
+      try {
+        await createVideo({
+          playback_id: playbackId,
+          view_mode: viewMode || 'free',
+          amount: amount || null,
+          assetName: name || title,
+          creatorId: creatorId,
+          Users: [],
+          donations: presetValues || [],
+        });
+        console.log('Video metadata saved to Supabase successfully');
+      } catch (supabaseError: any) {
+        console.error('Failed to save video to Supabase:', supabaseError);
+        // Continue anyway - video is uploaded to Livepeer
+        // In production, you might want to handle this differently
       }
 
       if (response.status !== 200) {

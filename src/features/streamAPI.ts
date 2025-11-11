@@ -1,9 +1,8 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { InputCreatorIdType } from 'livepeer/models/components';
 import api from '../utils/api'; // Assuming you have an axios instance setup
-import axios from 'axios';
 import { Livepeer } from 'livepeer';
-import backendApi from '../utils/backendApi';
+import { createStream, getAllStreams as getAllStreamsFromSupabase, getStreamByPlaybackId } from '../lib/supabase-service';
 
 interface CreateLivestreamProps {
   streamName: string;
@@ -63,24 +62,28 @@ export const createLivestream = createAsyncThunk(
 
       const { playbackId, name } = response.data;
 
-      // Step 2: Send additional data to the second endpoint
-      const secondResponse = await axios.post(`https://chaintv.onrender.com/api/streams/addstream`, {
-        playbackId,
-        viewMode,
-        description,
-        amount,
-        streamName: name || streamName,
-        title: name || streamName,
-        creatorId,
-        logo,
-        bgcolor,
-        color,
-        fontSize,
-        donation,
-      });
-
-      if (secondResponse.status !== 200) {
-        throw new Error('Failed to send data to the second endpoint');
+      // Step 2: Save stream metadata to Supabase
+      try {
+        await createStream({
+          playback_id: playbackId,
+          view_mode: viewMode || 'free',
+          description: description || null,
+          amount: amount || null,
+          streamName: name || streamName,
+          creatorId: creatorId,
+          logo: logo || null,
+          title: name || streamName || null,
+          bgcolor: bgcolor || null,
+          color: color || null,
+          fontSize: fontSize ? parseInt(fontSize) : null,
+          font_family: null,
+          Users: [],
+          donations: donation || [],
+        });
+      } catch (supabaseError: any) {
+        console.error('Failed to save stream to Supabase:', supabaseError);
+        // Continue anyway - stream is created in Livepeer
+        // In production, you might want to handle this differently
       }
 
       return response.data;
@@ -96,7 +99,7 @@ export const getAllStreams = createAsyncThunk('streams/getAllStreams', async () 
   const response = await api.get('/stream');
   const streams = response.data;
 
-  // Step 2: Enrich each stream with logo from backend server
+  // Step 2: Enrich each stream with metadata from Supabase
   const enrichedStreams = await Promise.all(
     streams.map(async (stream: any) => {
       if (!stream.playbackId) {
@@ -104,20 +107,32 @@ export const getAllStreams = createAsyncThunk('streams/getAllStreams', async () 
       }
 
       try {
-        // Fetch stream details from backend server
-        const backendResponse = await backendApi.get(
-          `/streams/getstream?playbackId=${stream.playbackId}`
-        );
+        // Fetch stream details from Supabase
+        const supabaseStream = await getStreamByPlaybackId(stream.playbackId);
         
-        // Merge the logo (and other backend data like title) into the stream
-        return {
-          ...stream,
-          logo: backendResponse.data.stream?.logo || stream.logo || '',
-          title: backendResponse.data.stream?.title || backendResponse.data.stream?.streamName || stream.name || stream.title || '',
-        };
+        if (supabaseStream) {
+          // Merge Supabase metadata into the stream
+          return {
+            ...stream,
+            logo: supabaseStream.logo || stream.logo || '',
+            title: supabaseStream.title || supabaseStream.streamName || stream.name || stream.title || '',
+            description: supabaseStream.description || stream.description || '',
+            viewMode: supabaseStream.view_mode || stream.viewMode || 'free',
+            amount: supabaseStream.amount || stream.amount || 0,
+            bgcolor: supabaseStream.bgcolor || stream.bgcolor || '',
+            color: supabaseStream.color || stream.color || '',
+            fontSize: supabaseStream.fontSize?.toString() || stream.fontSize || '',
+            fontFamily: supabaseStream.font_family || stream.fontFamily || '',
+            donation: supabaseStream.donations || stream.donation || [],
+            Users: supabaseStream.Users || stream.Users || [],
+          };
+        }
+        
+        // If no Supabase data, return stream as-is
+        return { ...stream, logo: stream.logo || '' };
       } catch (error) {
-        // If backend fetch fails, return stream without logo
-        console.warn(`Failed to fetch logo for stream ${stream.playbackId}:`, error);
+        // If Supabase fetch fails, return stream without metadata
+        console.warn(`Failed to fetch metadata for stream ${stream.playbackId}:`, error);
         return { ...stream, logo: stream.logo || '' };
       }
     })

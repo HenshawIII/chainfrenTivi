@@ -11,6 +11,7 @@ import { createLivestream, getAllStreams } from '@/features/streamAPI';
 import { resetStreamStatus } from '@/features/streamSlice';
 import Image from 'next/image';
 import { AppDispatch, RootState } from '@/store/store';
+import { uploadImage } from '@/lib/supabase-service';
 
 /**
  * Extend formData with customization fields
@@ -79,17 +80,32 @@ export function CreateLivestream({ close }: { close: () => void }) {
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormData((prev) => ({
-        ...prev,
-        logo: reader.result as string, // <-- reader.result is a data URL (string)
-      }));
-    };
-    reader.readAsDataURL(file);
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show loading state
+    const prevLogo = formData.logo;
+    setFormData((prev) => ({ ...prev, logo: '' }));
+
+    try {
+      const imageUrl = await uploadImage(file, "stream-logos");
+      
+      if (imageUrl) {
+        setFormData((prev) => ({
+          ...prev,
+          logo: imageUrl,
+        }));
+        toast.success('Logo uploaded successfully');
+      } else {
+        setFormData((prev) => ({ ...prev, logo: prevLogo }));
+        toast.error('Failed to upload logo');
+      }
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      setFormData((prev) => ({ ...prev, logo: prevLogo }));
+      toast.error(error.message || 'Failed to upload logo');
+    }
   };
 
   const handlePresetChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {

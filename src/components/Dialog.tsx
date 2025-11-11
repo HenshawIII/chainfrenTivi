@@ -212,11 +212,11 @@
 
 'use client';
 import * as Dialog from '@radix-ui/react-dialog';
-import axios from 'axios';
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { toast } from 'sonner';
 import { RotatingLines } from 'react-loader-spinner';
+import { updateStream, uploadImage } from '@/lib/supabase-service';
 
 interface CustomizeChannelDialogProps {
   playbackId: string;
@@ -254,23 +254,38 @@ export function CustomizeChannelDialog({ playbackId, initialValues, onSave, open
     prevOpenRef.current = open;
   }, [open, initialValues]);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSettings((prev) => ({
-        ...prev,
-        logo: reader.result as string,
-      }));
-    };
-    reader.readAsDataURL(file);
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show loading state
+    const prevLogo = settings.logo;
+    setSettings((prev) => ({ ...prev, logo: '' }));
+
+    try {
+      const imageUrl = await uploadImage(file, "stream-logos");
+      
+      if (imageUrl) {
+        setSettings((prev) => ({
+          ...prev,
+          logo: imageUrl,
+        }));
+        toast.success('Logo uploaded successfully');
+      } else {
+        setSettings((prev) => ({ ...prev, logo: prevLogo }));
+        toast.error('Failed to upload logo');
+      }
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      setSettings((prev) => ({ ...prev, logo: prevLogo }));
+      toast.error(error.message || 'Failed to upload logo');
+    }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`https://chaintv.onrender.com/api/streams/updatestream/?playbackid=${playbackId}`, {
+      await updateStream(playbackId, {
         bgcolor: settings.bgColor,
         color: settings.textColor,
         fontSize: parseInt(settings.fontSize),

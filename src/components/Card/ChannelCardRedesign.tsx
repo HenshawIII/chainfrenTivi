@@ -10,6 +10,12 @@ import { useViewMetrics } from '@/app/hook/useViewerMetrics';
 import Link from 'next/link';
 import { useProfile } from '@/app/hook/useProfile';
 
+// Helper to check if URL is from Livepeer CDN (which might fail)
+const isLivepeerCDN = (url: string | undefined): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  return url.includes('recordings-cdn-s.lp-playback.studio') || url.includes('vod-cdn.lp-playback.studio');
+};
+
 interface ChannelCardRedesignProps extends ChannelCardProps {
   image: StaticImageData;
 }
@@ -28,9 +34,34 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
   const { thumbnailUrl, loading } = useFetchStreamPlaybackId(playb);
   const { viewerMetrics: viewstream } = useViewMetrics({ playbackId: playb });
   const { profile } = useProfile();
+  const [imageError, setImageError] = React.useState(false);
 
   const socialLinks = profile?.socialLinks || {};
   const hasSocialLinks = Object.values(socialLinks).some((link) => link && link.trim() !== '');
+
+  // Reset error when thumbnailUrl changes
+  React.useEffect(() => {
+    setImageError(false);
+  }, [thumbnailUrl]);
+
+  // Determine the image source with fallback chain: thumbnail -> logo -> default
+  const getImageSource = (): string | StaticImageData => {
+    if (imageError && thumbnailUrl) {
+      // If thumbnail failed, use logo or default
+      return logo || image;
+    }
+    // Prefer thumbnail if available, otherwise logo, otherwise default
+    return thumbnailUrl || logo || image;
+  };
+
+  const imageSrc = getImageSource();
+  const useRegularImg = typeof imageSrc === 'string' && isLivepeerCDN(imageSrc);
+
+  const handleImageError = () => {
+    if (!imageError && thumbnailUrl) {
+      setImageError(true);
+    }
+  };
 
   // console.log(title,logo,status);
 
@@ -43,13 +74,22 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
           <div className="flex items-center justify-center w-full h-full bg-white/10">
             <p className="text-white text-sm">Loading</p>
           </div>
+        ) : useRegularImg ? (
+          // Use regular img tag for Livepeer CDN URLs to avoid Next.js optimization errors
+          <img
+            src={imageSrc as string}
+            alt={title}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={handleImageError}
+          />
         ) : (
           <Image
-            src={thumbnailUrl || logo || image}
+            src={imageSrc}
             alt={title}
             fill
             className="object-cover"
             sizes="128px"
+            onError={handleImageError}
           />
         )}
         

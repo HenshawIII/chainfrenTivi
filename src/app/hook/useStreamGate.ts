@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import backendApi from '@/utils/backendApi';
+import { getStreamByPlaybackId, addPayingUserToStream } from '@/lib/supabase-service';
+import type { SupabaseStream } from '@/lib/supabase-types';
 
 export interface Stream {
   playbackId: string;
   creatorId: string;
   viewMode: 'free' | 'one-time' | 'monthly';
   amount: number;
-  Users?: Array<{ payingUser: string }>;
+  Users?: string[]; // Array of wallet addresses (updated to match Supabase)
   description: string;
   streamName: string;
   logo: string;
@@ -30,20 +31,45 @@ export function useStreamGate(playbackId: string) {
   const { publicKey, connected, sendTransaction } = useWallet();
   const { connection } = useConnection();
 
-  // 1️⃣ Fetch stream metadata
+  // 1️⃣ Fetch stream metadata from Supabase
   useEffect(() => {
     if (!playbackId) return;
     setLoading(true);
-    axios
-      .get<{ stream: Stream }>(`https://chaintv.onrender.com/api/streams/getstream?playbackId=${playbackId}`)
-      .then((res) => {
-        setStream(res.data.stream);
-        // auto‑open if free:
-        if (res.data.stream.viewMode === 'free') {
-          setHasAccess(true);
+    setError(null);
+    
+    getStreamByPlaybackId(playbackId)
+      .then((supabaseStream) => {
+        if (supabaseStream) {
+          // Convert Supabase stream to Stream interface
+          const streamData: Stream = {
+            playbackId: supabaseStream.playback_id,
+            creatorId: supabaseStream.creatorId,
+            viewMode: supabaseStream.view_mode,
+            amount: supabaseStream.amount || 0,
+            Users: supabaseStream.Users || [],
+            description: supabaseStream.description || '',
+            streamName: supabaseStream.streamName,
+            logo: supabaseStream.logo || '',
+            title: supabaseStream.title || supabaseStream.streamName,
+            bgcolor: supabaseStream.bgcolor || '',
+            color: supabaseStream.color || '',
+            fontSize: supabaseStream.fontSize?.toString() || '',
+            fontFamily: supabaseStream.font_family || '',
+            donation: supabaseStream.donations || [],
+          };
+          setStream(streamData);
+          // auto‑open if free:
+          if (streamData.viewMode === 'free') {
+            setHasAccess(true);
+          }
+        } else {
+          setError('Stream not found');
         }
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        setError(err.message || 'Failed to fetch stream');
+        console.error('Error fetching stream:', err);
+      })
       .finally(() => setLoading(false));
   }, [playbackId]);
 
@@ -57,8 +83,8 @@ export function useStreamGate(playbackId: string) {
     const isCreator = stream.creatorId?.toLowerCase() === walletAddress.toLowerCase();
     
     // Check if viewer has paid (is in Users array)
-    const hasPaid = stream.Users?.some((user) => 
-      user.payingUser?.toLowerCase() === walletAddress.toLowerCase()
+    const hasPaid = stream.Users?.some((userAddress) => 
+      userAddress.toLowerCase() === walletAddress.toLowerCase()
     );
 
     // Grant access if viewer is the creator or has paid
@@ -106,21 +132,25 @@ export function useStreamGate(playbackId: string) {
       const signature = await sendTransaction(transaction, connection);
       console.log('Transaction sent successfully, signature:', signature);
 
-      // Send payment info to backend (non-blocking)
-      await axios.post('https://chaintv.onrender.com/api/streams/addpayinguser', {
-        playbackId,
-        walletAddress: publicKey.toBase58(),
-        transactionSignature: signature,
-        solAmount,
-        usdAmount: stream.amount,
-      }).catch((backendError: any) => {
-        console.error('Failed to send payment info to backend:', backendError);
-        // Don't fail the payment if backend call fails
-      });
+      // Add paying user to Supabase (non-blocking)
+      const walletAddress = publicKey.toBase58();
+      try {
+        await addPayingUserToStream(playbackId, walletAddress);
+        // Update local stream state
+        if (stream) {
+          setStream({
+            ...stream,
+            Users: [...(stream.Users || []), walletAddress],
+          });
+        }
+      } catch (supabaseError: any) {
+        console.error('Failed to add paying user to Supabase:', supabaseError);
+        // Don't fail the payment if Supabase call fails
+      }
 
       // Grant access
       setHasAccess(true);
-      markPaid(publicKey.toBase58());
+      markPaid(walletAddress);
 
       return { success: true, signature };
     } catch (err: any) {
@@ -133,7 +163,7 @@ export function useStreamGate(playbackId: string) {
 
   // 4️⃣ Helper function to check if user has paid (for after payment confirmation)
   const markPaid = (userAddress: string) => {
-    if (stream?.Users?.some((u) => u.payingUser?.toLowerCase() === userAddress.toLowerCase())) {
+    if (stream?.Users?.some((addr) => addr.toLowerCase() === userAddress.toLowerCase())) {
       setHasAccess(true);
     }
   };
@@ -161,10 +191,35 @@ export function useGetStreamDetails(playbackId: string) {
     setLoading(true);
     setError(null);
 
-    axios
-      .get<{ stream: Stream }>(`https://chaintv.onrender.com/api/streams/getstream?playbackId=${playbackId}`)
-      .then((res) => setStream(res.data.stream))
-      .catch((err) => setError(err.message || 'Failed to fetch stream'))
+    getStreamByPlaybackId(playbackId)
+      .then((supabaseStream) => {
+        if (supabaseStream) {
+          // Convert Supabase stream to Stream interface
+          const streamData: Stream = {
+            playbackId: supabaseStream.playback_id,
+            creatorId: supabaseStream.creatorId,
+            viewMode: supabaseStream.view_mode,
+            amount: supabaseStream.amount || 0,
+            Users: supabaseStream.Users || [],
+            description: supabaseStream.description || '',
+            streamName: supabaseStream.streamName,
+            logo: supabaseStream.logo || '',
+            title: supabaseStream.title || supabaseStream.streamName,
+            bgcolor: supabaseStream.bgcolor || '',
+            color: supabaseStream.color || '',
+            fontSize: supabaseStream.fontSize?.toString() || '',
+            fontFamily: supabaseStream.font_family || '',
+            donation: supabaseStream.donations || [],
+          };
+          setStream(streamData);
+        } else {
+          setError('Stream not found');
+        }
+      })
+      .catch((err) => {
+        setError(err.message || 'Failed to fetch stream');
+        console.error('Error fetching stream:', err);
+      })
       .finally(() => setLoading(false));
   }, [playbackId]);
 
