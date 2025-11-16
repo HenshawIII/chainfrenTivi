@@ -1,14 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Image, { StaticImageData } from 'next/image';
 import { FaTwitter, FaInstagram, FaYoutube, FaLink } from 'react-icons/fa';
+import { RiVideoAddLine, RiLiveLine } from 'react-icons/ri';
 import { ChannelCardProps } from '@/interfaces';
-import { Popup } from '../Popup';
 import { useFetchStreamPlaybackId } from '@/app/hook/usePlaybckInfo';
-import { useViewMetrics } from '@/app/hook/useViewerMetrics';
 import Link from 'next/link';
-import { useProfile } from '@/app/hook/useProfile';
+import { getStreamByPlaybackId } from '@/lib/supabase-service';
+import { SupabaseStream } from '@/lib/supabase-types';
 
 // Helper to check if URL is from Livepeer CDN (which might fail)
 const isLivepeerCDN = (url: string | undefined): boolean => {
@@ -18,6 +18,9 @@ const isLivepeerCDN = (url: string | undefined): boolean => {
 
 interface ChannelCardRedesignProps extends ChannelCardProps {
   image: StaticImageData;
+  showName?: boolean;
+  showSocialLinks?: boolean;
+  useThumbnail?: boolean; // If true, prefer thumbnail; if false, prefer logo from stream
 }
 
 export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
@@ -30,13 +33,73 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
   logo,
   lastSeen,
   status,
+  showName = true,
+  showSocialLinks = true,
+  useThumbnail = false,
 }) => {
   const { thumbnailUrl, loading } = useFetchStreamPlaybackId(playb);
-  const { viewerMetrics: viewstream } = useViewMetrics({ playbackId: playb });
-  const { profile } = useProfile();
   const [imageError, setImageError] = React.useState(false);
+  const [streamData, setStreamData] = useState<SupabaseStream | null>(null);
+  const [loadingStream, setLoadingStream] = useState(true);
 
-  const socialLinks = profile?.socialLinks || {};
+  // Fetch stream data from Supabase
+  useEffect(() => {
+    const fetchStreamData = async () => {
+      if (!playbackId) {
+        setLoadingStream(false);
+        return;
+      }
+
+      try {
+        setLoadingStream(true);
+        const stream = await getStreamByPlaybackId(playbackId);
+        setStreamData(stream);
+      } catch (error) {
+        console.error('Error fetching stream data:', error);
+      } finally {
+        setLoadingStream(false);
+      }
+    };
+
+    fetchStreamData();
+  }, [playbackId]);
+
+  // Helper function to parse socialLinks from array of JSON strings to object format
+  const parseSocialLinks = (socialLinksArray: string[] | null | undefined): { twitter?: string; instagram?: string; youtube?: string; website?: string } => {
+    const socialLinks: { twitter?: string; instagram?: string; youtube?: string; website?: string } = {};
+    
+    if (Array.isArray(socialLinksArray)) {
+      socialLinksArray.forEach((jsonString: string) => {
+        if (typeof jsonString === 'string') {
+          try {
+            const parsed = JSON.parse(jsonString);
+            Object.keys(parsed).forEach((key) => {
+              const value = parsed[key];
+              if (key === 'twitter' && value) {
+                socialLinks.twitter = value;
+              } else if (key === 'instagram' && value) {
+                socialLinks.instagram = value;
+              } else if (key === 'youtube' && value) {
+                socialLinks.youtube = value;
+              } else if (key === 'website' && value) {
+                socialLinks.website = value;
+              }
+            });
+          } catch (e) {
+            console.warn('Failed to parse social link JSON:', jsonString);
+          }
+        }
+      });
+    }
+    
+    return socialLinks;
+  };
+
+  // Get stream name from stream data, fallback to title prop
+  const streamName = streamData?.streamName || title;
+  
+  // Get social links from stream data
+  const socialLinks = streamData ? parseSocialLinks(streamData.socialLinks) : {};
   const hasSocialLinks = Object.values(socialLinks).some((link) => link && link.trim() !== '');
 
   // Reset error when thumbnailUrl changes
@@ -44,17 +107,23 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
     setImageError(false);
   }, [thumbnailUrl]);
 
-  // Determine the image source with fallback chain: thumbnail -> logo -> default
-  const getImageSource = (): string | StaticImageData => {
+  // Determine the image source based on useThumbnail prop
+  const getImageSource = (): string | StaticImageData | null => {
+    if (useThumbnail) {
+      // For Gallery: prefer thumbnail -> null (will show custom placeholder)
     if (imageError && thumbnailUrl) {
-      // If thumbnail failed, use logo or default
-      return logo || image;
+        return null; // Show custom placeholder instead of default image
+      }
+      return thumbnailUrl || null;
+    } else {
+      // For "Your Channel": prefer logo from stream -> logo prop -> default
+      const streamLogo = streamData?.logo || logo;
+      return streamLogo || image;
     }
-    // Prefer thumbnail if available, otherwise logo, otherwise default
-    return thumbnailUrl || logo || image;
   };
 
   const imageSrc = getImageSource();
+  const hasImage = imageSrc !== null;
   const useRegularImg = typeof imageSrc === 'string' && isLivepeerCDN(imageSrc);
 
   const handleImageError = () => {
@@ -65,55 +134,90 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
 
   // console.log(title,logo,status);
 
+  // Determine layout based on what's being shown
+  const isSimpleLayout = !showName && !showSocialLinks;
+
+  // Custom placeholder component for Gallery when no thumbnail is available
+  const StreamPlaceholder = () => (
+    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-yellow-500/20 via-teal-500/20 to-yellow-500/20 flex flex-col items-center justify-center">
+      <div className="relative flex flex-col items-center">
+        <div className="relative mb-4">
+          {/* <RiVideoAddLine className="w-20 h-20 text-yellow-400/80" /> */}
+          <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-yellow-400/40 flex items-center justify-center backdrop-blur-sm">
+            <RiLiveLine className="w-4 h-4 text-yellow-400" />
+          </div>
+        </div>
+        {/* <p className="text-white/80 text-sm font-semibold">Ready to Go Live</p> */}
+        <p className="text-white/50 text-xs mt-1">No thumbnail available</p>
+      </div>
+    </div>
+  );
+
   return (
-    <>
-    <div className="w-full max-w-none flex bg-transparent  items-center space-y-4 justify-between p-4 rounded-lg">
-      {/* Round Stream Image */}
-      <div className="relative w-32 h-32 rounded-full overflow-hidden border-4 border-yellow-400/50">
+    <div className={`w-full max-w-none flex bg-transparent items-center space-y-4 p-4 rounded-lg ${isSimpleLayout ? 'justify-center flex-col' : 'justify-between'}`}>
+      {/* Stream Image - Different sizes based on layout */}
+      <div className={`relative overflow-hidden border-4 border-yellow-400/50 ${isSimpleLayout ? 'w-full max-w-md aspect-video rounded-lg' : 'w-32 h-32 rounded-full'}`}>
         {loading ? (
-          <div className="flex items-center justify-center w-full h-full bg-white/10">
+          <div className="flex items-center justify-center w-full h-full bg-black">
             <p className="text-white text-sm">Loading</p>
           </div>
-        ) : useRegularImg ? (
+        ) : !hasImage && isSimpleLayout ? (
+          // Show custom placeholder when no thumbnail is available in Gallery view
+          <StreamPlaceholder />
+        ) : hasImage && useRegularImg ? (
           // Use regular img tag for Livepeer CDN URLs to avoid Next.js optimization errors
           <img
             src={imageSrc as string}
-            alt={title}
+            alt={streamName}
             className="absolute inset-0 w-full h-full object-cover"
             onError={handleImageError}
           />
-        ) : (
+        ) : hasImage ? (
           <Image
-            src={imageSrc}
-            alt={title}
+            src={imageSrc as string | StaticImageData}
+            alt={streamName}
             fill
             className="object-cover"
-            sizes="128px"
+            sizes={isSimpleLayout ? "(max-width: 768px) 100vw, 512px" : "128px"}
             onError={handleImageError}
           />
-        )}
+        ) : null}
         
+        {/* Live Status Badge - Only show in simple layout */}
+        {isSimpleLayout && status && (
+          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded font-semibold flex items-center gap-1">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            LIVE
+          </div>
+        )}
       </div>
 
-      {/* Bold Stream Name */}
+      {/* Stream Status Display - Only show in simple layout (Gallery) */}
+      {isSimpleLayout && (
+        <div className="w-full max-w-md flex items-center justify-center gap-2 px-4 py-2 bg-white/5 rounded-lg border border-white/10">
+          <div className={`w-2 h-2 rounded-full ${status ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <span className={`text-sm font-medium ${status ? 'text-green-400' : 'text-gray-400'}`}>
+            {status ? 'Live' : 'Offline'}
+          </span>
+        </div>
+      )}
+
+      {/* Bold Stream Name - Only show if showName is true */}
+      {showName && (
       <div className="text-center flex">
-        <h2 className="text-white font-bold text-2xl">{title}</h2>
+          <h2 className="text-white font-bold text-2xl">{title || streamName}</h2>
         <h2 className="text-yellow-300 text-sm ">TV</h2>
-        {/* Live Status Badge */}
+          {/* Live Status Badge - Only show when name is visible */}
         {status && (
           <div className="absolute bottom-0 right-0 bg-green-500 text-white text-xs px-2 py-1 rounded-tl-lg rounded-br-lg font-semibold">
             LIVE
           </div>
         )}
-        {/* {viewstream?.viewCount !== undefined && (
-          <p className="text-gray-300 text-sm mt-1">{viewstream.viewCount} views</p>
+        </div>
         )}
-        {lastSeen && (
-          <p className="text-gray-400 text-xs mt-1">Last active {lastSeen.toDateString()}</p>
-        )} */}
-      </div>
 
-      {/* Social Media Links or Add Links Button */}
+      {/* Social Media Links or Add Links Button - Only show if showSocialLinks is true */}
+      {showSocialLinks && (
       <div className="flex flex-col items-center justify-center gap-3">
         {hasSocialLinks ? (
           <>
@@ -172,28 +276,8 @@ export const ChannelCardRedesign: React.FC<ChannelCardRedesignProps> = ({
           </Link>
         )}
       </div>
-
-    
+      )}
     </div>
-      {/* Action Buttons */}
-      <div className="flex items-center justify-between gap-4">
-        {goLive && (
-          <button
-            onClick={goLive}
-            className="flex-1 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black font-semibold py-2 px-4 rounded-lg transition-all duration-200"
-          >
-            Go Live
-          </button>
-        )}
-        
-        {/* Options Menu */}
-        {streamId && playbackId && (
-          <div className="flex-shrink-0">
-            <Popup streamId={streamId} playbackId={playbackId} />
-          </div>
-        )}
-      </div>
-      </>
   );
 };
 

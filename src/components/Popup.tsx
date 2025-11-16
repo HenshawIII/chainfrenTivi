@@ -238,24 +238,24 @@ export const AssetPopup = ({ asset }: AssetPopProps) => {
             <BsThreeDotsVertical className="text-lg cursor-pointer text-black-primary-text focus:bg-main-blue focus:ring-2 focus:ring-offset-2" />
           </button>
         </DropdownMenu.Trigger>
-        <DropdownMenu.Content className="min-w-[200px] min-h-[100px] z-50 bg-white rounded shadow-md p-2">
-          <DropdownMenu.Item onSelect={handleCopyAssetLink} className={listItemClassNames.option}>
-            <RiTokenSwapFill className={listItemClassNames.icon} />
-            <p className="ml-2 text-sm font-medium text-black-primary-text">Copy Download URL</p>
+        <DropdownMenu.Content className="min-w-[200px] min-h-fit z-50 bg-white rounded shadow-md p-2">
+          {/* <DropdownMenu.Item onSelect={handleCopyAssetLink} className="flex items-center text-lg px-5 py-2 hover:bg-gray-100 cursor-pointer text-black">
+            <RiTokenSwapFill className="text-black text-xl font-bold" />
+            <p className="ml-2 text-sm font-medium text-black">Copy Download URL</p>
           </DropdownMenu.Item>
 
-          <DropdownMenu.Item onSelect={handleDownloadAds} className={listItemClassNames.option}>
-            <AiOutlineCloudDownload className={listItemClassNames.icon} />
-            <p className="ml-2 text-sm font-medium text-black-primary-text">Download video</p>
+          <DropdownMenu.Item onSelect={handleDownloadAds} className="flex items-center text-lg px-5 py-2 hover:bg-gray-100 cursor-pointer text-black">
+            <AiOutlineCloudDownload className="text-black text-xl font-bold" />
+            <p className="ml-2 text-sm font-medium text-black">Download video</p>
           </DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={handlePlaybackId} className={listItemClassNames.option}>
-            <HiLink className={listItemClassNames.icon} />
-            <p className="ml-2 text-sm text-black-primary-text font-medium">Copy PlaybackId</p>
-          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={handlePlaybackId} className="flex items-center text-lg px-5 py-2 hover:bg-gray-100 cursor-pointer text-black">
+            <HiLink className="text-black text-xl font-bold" />
+            <p className="ml-2 text-sm text-black font-medium">Copy PlaybackId</p>
+          </DropdownMenu.Item> */}
 
-          <DropdownMenu.Item onSelect={handleDeleteAsset} className={listItemClassNames.option}>
-            <RiDeleteBin6Line className={`${listItemClassNames.icon} text-red-700`} />
-            <p className="ml-2 text-sm font-medium text-black-primary-text">Delete video</p>
+          <DropdownMenu.Item onSelect={handleDeleteAsset} className="flex items-center text-lg px-5 py-2 hover:bg-gray-100 cursor-pointer text-black">
+            <RiDeleteBin6Line className="text-red-700 text-xl font-bold" />
+            <p className="ml-2 text-sm font-medium text-red-700">Delete video</p>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Root>

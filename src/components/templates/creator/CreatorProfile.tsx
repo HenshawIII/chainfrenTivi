@@ -6,15 +6,16 @@ import { getAssets } from '@/features/assetsAPI';
 import { AppDispatch, RootState } from '@/store/store';
 import { Stream, Asset } from '@/interfaces';
 import { VideoCard } from '@/components/Card/Card';
+import { ChannelCardRedesign } from '@/components/Card/ChannelCardRedesign';
+import { CreatorChannelCard } from './CreatorChannelCard';
 import image1 from '@/assets/image1.png';
 import { Bars } from 'react-loader-spinner';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { getUserProfile, subscribeToCreator } from '@/lib/supabase-service';
+import { getUserProfile, subscribeToCreator, unsubscribeFromCreator, getStreamsByCreator } from '@/lib/supabase-service';
 import SectionCard from '@/components/Card/SectionCard';
 import { Menu, X } from 'lucide-react';
 import clsx from 'clsx';
-import { PublicStreamCard } from './PublicStreamCard';
 import Logo from '@/components/Logo';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
@@ -22,6 +23,11 @@ import Sidebar from '@/components/Sidebar';
 import SidebarBottomLinks from '@/components/SidebarBottomLinks';
 import BottomNav from '@/components/BottomNav';
 import { LuArrowLeftFromLine, LuArrowRightFromLine } from 'react-icons/lu';
+import { FaTwitter, FaInstagram, FaYoutube, FaLink } from 'react-icons/fa';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import { Skeleton } from '@/components/ui/skeleton';
+import Header from '@/components/Header';
+import { ProfileColumn } from '@/components/templates/dashboard/ProfileColumn';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +71,6 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
   const { assets, loading: assetsLoading, error: assetsError } = useSelector((state: RootState) => state.assets);
   const { user, authenticated, ready } = usePrivy();
   const router = useRouter();
-  const solanaWalletAddress = useSelector((state: RootState) => state.user.solanaWalletAddress);
   
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,16 +78,31 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [creatorStreamData, setCreatorStreamData] = useState<any>(null);
 
   // Get current user's wallet address
+  // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
   const currentUserAddress = useMemo(() => {
-    if (user?.wallet?.chainType === 'solana' && user?.wallet?.address) {
-      return user.wallet.address;
+    if (!user?.linkedAccounts || user.linkedAccounts.length === 0) return '';
+    
+    // Check if primary login method is a wallet
+    const firstAccount = user.linkedAccounts[0];
+    if (firstAccount.type === 'wallet' && 'address' in firstAccount && firstAccount.address) {
+      return firstAccount.address;
     }
-    return solanaWalletAddress || '';
-  }, [user?.wallet, solanaWalletAddress]);
+    
+    // Find a wallet from linked accounts
+    const walletAccount = user.linkedAccounts.find((account: any) => account.type === 'wallet' && 'address' in account && account.address);
+    if (walletAccount && 'address' in walletAccount && walletAccount.address) {
+      return walletAccount.address;
+    }
+    
+    return '';
+  }, [user?.linkedAccounts]);
 
   // Check if viewer is the creator
   const isCreator = useMemo(() => {
@@ -93,12 +113,81 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
   // Check if user is logged in
   const isLoggedIn = authenticated && ready && !!currentUserAddress;
 
-  // Fetch creator profile data
+  // Check subscription status when user is logged in
+  useEffect(() => {
+    const checkSubscriptionStatus = async () => {
+      if (!isLoggedIn || !currentUserAddress || !creatorId) {
+        setIsSubscribed(false);
+        return;
+      }
+
+      try {
+        setCheckingSubscription(true);
+        const viewerProfile = await getUserProfile(currentUserAddress);
+        if (viewerProfile && viewerProfile.Channels) {
+          const isSubscribedToCreator = viewerProfile.Channels.includes(creatorId);
+          setIsSubscribed(isSubscribedToCreator);
+        } else {
+          setIsSubscribed(false);
+        }
+      } catch (error: any) {
+        console.error('Error checking subscription status:', error);
+        setIsSubscribed(false);
+      } finally {
+        setCheckingSubscription(false);
+      }
+    };
+
+    checkSubscriptionStatus();
+  }, [isLoggedIn, currentUserAddress, creatorId]);
+
+  // Helper function to parse socialLinks from stream data
+  const parseSocialLinks = (socialLinksArray: string[] | null | undefined): { twitter?: string; instagram?: string; youtube?: string; website?: string } => {
+    const socialLinks: { twitter?: string; instagram?: string; youtube?: string; website?: string } = {};
+    
+    if (!Array.isArray(socialLinksArray)) return socialLinks;
+    
+    socialLinksArray.forEach((jsonString: string) => {
+      if (typeof jsonString === 'string') {
+        try {
+          const parsed = JSON.parse(jsonString);
+          Object.keys(parsed).forEach((key) => {
+            const value = parsed[key];
+            if (key === 'twitter' && value) {
+              socialLinks.twitter = value;
+            } else if (key === 'instagram' && value) {
+              socialLinks.instagram = value;
+            } else if (key === 'youtube' && value) {
+              socialLinks.youtube = value;
+            } else if (key === 'website' && value) {
+              socialLinks.website = value;
+            }
+          });
+        } catch (e) {
+          console.warn('Failed to parse social link JSON:', jsonString);
+        }
+      }
+    });
+    
+    return socialLinks;
+  };
+
+  // Fetch creator profile data and stream data
   useEffect(() => {
     const fetchCreatorProfile = async () => {
       try {
         setLoading(true);
         const supabaseUser = await getUserProfile(creatorId);
+        
+        // Fetch stream data for the channel display (bio and socialLinks are in stream table)
+        try {
+          const streams = await getStreamsByCreator(creatorId);
+          if (streams && streams.length > 0) {
+            setCreatorStreamData(streams[0]);
+          }
+        } catch (err) {
+          console.warn('Failed to fetch stream data:', err);
+        }
         
         if (supabaseUser) {
           // Convert socialLinks from array of JSON strings to object format
@@ -260,7 +349,8 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
     setIsSubscribing(true);
     try {
       await subscribeToCreator(currentUserAddress, creatorId);
-      toast.success(`Subscribed to ${creatorProfile?.displayName || 'creator'}!`);
+      setIsSubscribed(true);
+      toast.success(`Subscribed to ${creatorProfile?.displayName || creatorStreamData?.title || 'creator'}!`);
     } catch (err: any) {
       console.error('Subscribe error:', err);
       toast.error(err.message || 'Failed to subscribe');
@@ -269,10 +359,30 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
     }
   };
 
+  // Handle unsubscribe action
+  const handleUnsubscribe = async () => {
+    if (!isLoggedIn || !currentUserAddress) {
+      toast.error('Wallet address not found');
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      await unsubscribeFromCreator(currentUserAddress, creatorId);
+      setIsSubscribed(false);
+      toast.success(`Unsubscribed from ${creatorProfile?.displayName || creatorStreamData?.title || 'creator'}`);
+    } catch (err: any) {
+      console.error('Unsubscribe error:', err);
+      toast.error(err.message || 'Failed to unsubscribe');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
   // Handle signup redirect
   const handleSignup = () => {
     setShowSignupModal(false);
-    router.push('/dashboard');
+    router.push('/auth/login');
   };
 
   return (
@@ -319,194 +429,163 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col gap-4 h-screen overflow-hidden">
-        <div className="flex-1 flex gap-4 overflow-auto pb-20">
-          <div className="flex-1 my-2 ml-2 pb-8">
+      <div className="flex-1 flex flex-col gap-4 h-screen overflow-hidden relative">
+        <div className="flex-1 flex gap-4 overflow-hidden">
+          <div className="flex-1 my-2 ml-2 flex flex-col relative">
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto pb-4">
           {/* Header */}
-          <header className="flex-1 w-full z-10 top-0 right-0 transition-all shadow-md duration-300 ease-in-out">
-            <div className="flex justify-between items-center p-2 sm:p-5 bg-white/10 backdrop-blur-sm border-b border-white/20 sticky top-0 z-10">
-              <div className="flex items-center w-full flex-1 gap-3">
-                <button onClick={toggleMobileMenu} className="md:hidden">
-                  {mobileMenuOpen ? <X className="h-7 w-7 text-white" /> : <Menu className="h-7 w-7 text-white" />}
-                </button>
-                <div className="rounded-md text-white">
-                  {/* <h1 className="text-md sm:text-lg font-bold text-white">{creatorProfile?.displayName || 'Creator Profile'}</h1> */}
-                  {/* <Logo size="lg" /> */}
-                  <h1 className="text-md sm:text-lg font-bold text-white">ChainfrenTV - Live Streaming onChain</h1>
-                </div>
-              </div>
-              {/* Subscribe Button - Only show if viewer is not the creator */}
-              {!isCreator && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleSubscribe}
-                    disabled={isSubscribing}
-                    className="px-3 sm:px-4 py-2 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm sm:text-base"
-                  >
-                    {isSubscribing ? (
-                      <>
-                        <Bars width={16} height={16} color="#ffffff" />
-                        <span className="hidden sm:inline">Subscribing...</span>
-                        <span className="sm:hidden">...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                        <span className="hidden sm:inline">Subscribe</span>
-                        <span className="sm:hidden">Sub</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-          </header>
+          <Header 
+            toggleMenu={toggleMobileMenu} 
+            mobileOpen={mobileMenuOpen}
+            title={creatorStreamData?.title || creatorStreamData?.streamName || undefined}
+          />
 
           {/* Signup Modal for Subscribe */}
           <AlertDialog open={showSignupModal} onOpenChange={setShowSignupModal}>
             <AlertDialogContent className="bg-white">
               <AlertDialogHeader>
-                <AlertDialogTitle>Sign Up Required</AlertDialogTitle>
+                <AlertDialogTitle>Sign In Required</AlertDialogTitle>
                 <AlertDialogDescription>
-                  You need to sign up and connect your wallet to subscribe to creators. Would you like to sign up now?
+                  You need to sign in to subscribe to creators. Would you like to sign in now?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setShowSignupModal(false)}>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={handleSignup} className="bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black">
-                  Sign Up
+                  Sign In
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
 
-          {/* Creator Info Card */}
+          {/* Channel Section - Similar to "Your Channel" in Dashboard */}
           <SectionCard title="">
-            <div className="col-span-full w-full flex flex-col md:flex-row items-center justify-between gap-4 p-4">
-              <div className="flex flex-col md:flex-row items-center gap-4">
-                <div className="relative">
-                  <img
-                    src={creatorProfile?.avatar || '/assets/images/default-avatar.png'}
-                    alt={creatorProfile?.displayName}
-                    className="w-20 h-20 rounded-full object-cover border-4"
-                    style={{ borderColor:  '#C28B0A' }}
-                  />
-                  {creatorProfile?.isVerified && (
-                    <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-1">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                <div className="text-center md:text-left">
-                  <h1 className="text-2xl md:text-3xl font-bold text-white">{creatorProfile?.displayName}</h1>
-                  <p className="text-lg text-gray-300 mt-2">{creatorProfile?.bio}</p>
-                </div>
-              </div>
-              
-              {/* Social Links */}
-              <div className="flex space-x-3">
-                {creatorProfile?.socialLinks?.twitter && (
-                  <a
-                    href={creatorProfile?.socialLinks?.twitter}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-opacity-20 transition-colors bg-white/10"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
-                    </svg>
-                  </a>
-                )}
-                {creatorProfile?.socialLinks?.instagram && (
-                  <a
-                    href={creatorProfile?.socialLinks?.instagram}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-opacity-20 transition-colors bg-white/10"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 6.62 5.367 11.987 11.988 11.987 6.62 0 11.987-5.367 11.987-11.987C24.014 5.367 18.637.001 12.017.001zM8.449 16.988c-1.297 0-2.448-.49-3.323-1.297C4.198 14.895 3.708 13.744 3.708 12.447s.49-2.448 1.297-3.323c.875-.807 2.026-1.297 3.323-1.297s2.448.49 3.323 1.297c.807.875 1.297 2.026 1.297 3.323s-.49 2.448-1.297 3.323c-.875.875-2.026 1.297-3.323 1.297zm7.718-1.297c-.875.807-2.026 1.297-3.323 1.297s-2.448-.49-3.323-1.297c-.807-.875-1.297-2.026-1.297-3.323s.49-2.448 1.297-3.323c.875-.807 2.026-1.297 3.323-1.297s2.448.49 3.323 1.297c.807.875 1.297 2.026 1.297 3.323s-.49 2.448-1.297 3.323z"/>
-                    </svg>
-                  </a>
-                )}
-                {creatorProfile?.socialLinks?.youtube && (
-                  <a
-                    href={creatorProfile?.socialLinks?.youtube}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-opacity-20 transition-colors bg-white/10"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                    </svg>
-                  </a>
-                )}
-                {creatorProfile?.socialLinks?.website && (
-                  <a
-                    href={creatorProfile?.socialLinks?.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full hover:bg-opacity-20 transition-colors bg-white/10"
-                  >
-                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm-1 16.057v-3.057h2v3.057c1.14-.102 2-.317 2-.735 0-.418-.86-.633-2-.735V9.057c1.14-.102 2-.317 2-.735 0-.418-.86-.633-2-.735V5.057c1.14-.102 2-.317 2-.735 0-.418-.86-.633-2-.735V2h-2v1.057c-1.14.102-2 .317-2 .735 0 .418.86.633 2 .735v2.53c-1.14.102-2 .317-2 .735 0 .418.86.633 2 .735v2.53c-1.14.102-2 .317-2 .735 0 .418.86.633 2 .735z"/>
-                    </svg>
-                  </a>
-                )}
-              </div>
-            </div>
-          </SectionCard>
-
-          <hr className="border-white/20" />
-
-          {/* Live Streams Section */}
-          <div id="streams">
-          <SectionCard title="Live Streams">
             {streamsLoading ? (
-              <div className="col-span-full flex justify-center py-8">
-                <Bars width={40} height={40} color="#facc15" />
-              </div>
-            ) : creatorStreams.length > 0 ? (
-              creatorStreams.map((stream) => (
-                <div key={stream.id} className="col-span-full w-full">
-                  <PublicStreamCard
-                    title={stream.title || stream.name}
-                    image={image1}
-                    logo={stream.logo}
-                    playbackId={stream.playbackId}
-                    playb={stream.playbackId}
-                    lastSeen={new Date(stream.lastSeen || 0)}
-                    status={stream.isActive}
-                    creatorId={creatorId}
-                  />
+              Array.from({ length: 1 }, (_, index) => (
+                <div key={index} className="flex flex-col space-y-3">
+                  <Skeleton className="h-[180px] w-[318px] rounded-xl bg-black" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 md:w-[316px] rounded-md bg-black" />
+                    <Skeleton className="h-7 w-[44px] rounded-md bg-black" />
+                    </div>
                 </div>
               ))
+            ) : creatorStreamData || creatorProfile ? (
+              <div className="col-span-full w-full space-y-4">
+                <CreatorChannelCard
+                  title={creatorStreamData?.title || creatorStreamData?.streamName || creatorProfile?.displayName || 'Channel'}
+                  logo={creatorStreamData?.logo || creatorProfile?.avatar || null}
+                  bio={creatorStreamData?.description || null}
+                  socialLinks={parseSocialLinks(creatorStreamData?.socialLinks) || {}}
+                  defaultImage={image1}
+                  isActive={creatorStreamData?.isActive || false}
+                />
+                {/* Subscribe/Unsubscribe Button - Only show if viewer is not the creator */}
+                {!isCreator && (
+                  <div className="flex justify-center">
+                    {checkingSubscription ? (
+                      <div className="px-6 py-3 flex items-center gap-2">
+                        <Bars width={16} height={16} color="#facc15" />
+                        <span className="text-gray-400">Checking...</span>
+                      </div>
+                    ) : isSubscribed ? (
+                      <button
+                        onClick={handleUnsubscribe}
+                        disabled={isSubscribing}
+                        className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isSubscribing ? (
+                          <>
+                            <Bars width={16} height={16} color="#ffffff" />
+                            <span>Unsubscribing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                            <span>Unsubscribe</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSubscribe}
+                        disabled={isSubscribing}
+                        className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-all duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isSubscribing ? (
+                          <>
+                            <Bars width={16} height={16} color="#000000" />
+                            <span>Subscribing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span>Subscribe</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="col-span-full text-center py-8 text-gray-300">
-                <p>No live streams available</p>
+                <p>No channel information available</p>
               </div>
             )}
           </SectionCard>
-          </div>
 
           <hr className="border-white/20" />
 
-          {/* Videos Section */}
-          <div id="videos">
-          <SectionCard title="Videos">
+          {/* Gallery Section with Tabs - Similar to Dashboard */}
+          <SectionCard title="">
+            <Tabs defaultValue="videos" className="w-full col-span-full">
+              <TabsList className="grid w-full grid-cols-2 bg-white/10 backdrop-blur-sm border border-white/20 p-1">
+                <TabsTrigger 
+                  value="videos" 
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-teal-500 data-[state=active]:text-black text-white"
+                >
+                  Videos
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="livestreams"
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-500 data-[state=active]:to-teal-500 data-[state=active]:text-black text-white"
+                >
+                  Livestreams
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Videos Tab */}
+              <TabsContent value="videos" className="mt-4">
             {assetsLoading ? (
-              <div className="col-span-full flex justify-center py-8">
-                <Bars width={40} height={40} color="#facc15" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.from({ length: 6 }, (_, index) => (
+                      <div key={index} className="flex flex-col space-y-3">
+                        <Skeleton className="h-[180px] w-full rounded-xl bg-black" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-full rounded-md bg-black" />
+                          <Skeleton className="h-7 w-20 rounded-md bg-black" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {creatorAssets.length === 0 ? (
+                      <div className="flex justify-center items-center h-60">
+                        <p className="text-gray-300">No Videos Available.</p>
               </div>
-            ) : creatorAssets.length > 0 ? (
-              creatorAssets.map((asset) => (
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {creatorAssets.map((asset) => (
+                          <div key={asset.id}>
                 <VideoCard
-                  key={asset.id}
                   title={asset.name}
                   assetData={asset}
                   imageUrl={image1}
@@ -514,20 +593,122 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
                   createdAt={new Date(asset.createdAt)}
                   format={asset.videoSpec?.format}
                 />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+
+              {/* Livestreams Tab */}
+              <TabsContent value="livestreams" className="mt-4">
+                {streamsLoading ? (
+                  Array.from({ length: 1 }, (_, index) => (
+                    <div key={index} className="flex flex-col space-y-3">
+                      <Skeleton className="h-[180px] w-[318px] rounded-xl bg-black" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 md:w-[316px] rounded-md bg-black" />
+                        <Skeleton className="h-7 w-[44px] rounded-md bg-black" />
+                      </div>
+                    </div>
               ))
             ) : (
-              <div className="col-span-full text-center py-8 text-gray-300">
-                <p>No videos available</p>
+                  <>
+                    {creatorStreams.length === 0 ? (
+                      <div className="flex justify-center items-center h-60">
+                        <p className="text-gray-300">No Livestreams Available.</p>
+                      </div>
+                    ) : (
+                      <>
+                        {creatorStreams.map((stream) => (
+                          <div key={stream.id} className="mb-4">
+                            <ChannelCardRedesign
+                              title={stream.title || stream.name}
+                              image={image1}
+                              logo={stream.logo}
+                              playbackId={stream.playbackId}
+                              playb={stream.playbackId}
+                              lastSeen={new Date(stream.lastSeen || 0)}
+                              status={stream.isActive}
+                              showName={false}
+                              showSocialLinks={false}
+                              useThumbnail={true}
+                            />
+                            {/* View Stream Button */}
+                            <div className="mt-4">
+                              <Link
+                                href={`/view/${stream.playbackId}?streamName=${encodeURIComponent(stream.title || stream.name || '')}&id=${encodeURIComponent(creatorId)}`}
+                                className="w-full bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black font-semibold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
+                              >
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
+                                </svg>
+                                View Stream
+                              </Link>
+                            </div>
               </div>
+                        ))}
+                      </>
+                    )}
+                  </>
             )}
+              </TabsContent>
+            </Tabs>
           </SectionCard>
           </div>
+          
+          {/* Bottom Navigation - Fixed at bottom of middle column */}
+          <div className="flex-shrink-0 z-10">
+            <BottomNav />
           </div>
         </div>
         
-        {/* Bottom Navigation - Contained within Creator Profile content */}
-        <div className="w-full">
-          <BottomNav />
+          {/* Viewer Profile Column - Desktop View */}
+          <div className="hidden lg:block flex-shrink-0 pt-2 pr-2">
+            {ready && authenticated ? (
+              // Logged in: Show ProfileColumn component
+              <ProfileColumn />
+            ) : (
+              // Not logged in: Show login prompts
+              <div className="w-[400px] p-4 px-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg space-y-4">
+                <div className="text-center space-y-4">
+                  {/* Icon */}
+                  <div className="flex justify-center">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-r from-yellow-500/30 to-teal-500/30 flex items-center justify-center border-2 border-yellow-400">
+                      <svg className="w-12 h-12 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <h3 className="text-white font-semibold text-lg">Join ChainfrenTV</h3>
+                    <p className="text-gray-400 text-sm">
+                      Sign in to access your profile, manage your content, and interact with creators.
+                    </p>
+                  </div>
+
+                  {/* Login Button */}
+                  <Link
+                    href="/auth/login"
+                    className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Sign In
+                  </Link>
+
+                  {/* Additional Info */}
+                  <p className="text-gray-500 text-xs mt-4">
+                    New to ChainfrenTV? Signing in will create your account automatically.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -536,10 +717,10 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
 export function CreatorProfileLoading() {
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="flex items-center justify-center h-screen bg-black">
       <div className="text-center">
         <Bars width={40} height={40} color="#facc15" />
-        <p className="mt-4">Loading creator profile...</p>
+        <p className="mt-4 text-white">Loading creator profile...</p>
       </div>
     </div>
   );

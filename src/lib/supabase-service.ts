@@ -374,29 +374,58 @@ export async function subscribeToCreator(userWalletAddress: string, creatorId: s
 }
 
 /**
- * Get subscribed channels for a user (returns array of creator profiles)
+ * Unsubscribe from a creator (remove creatorId from user's Channels array)
  */
-export async function getSubscribedChannels(userWalletAddress: string): Promise<SupabaseUser[]> {
+export async function unsubscribeFromCreator(userWalletAddress: string, creatorId: string): Promise<SupabaseUser> {
+  // Get current user profile
+  const userProfile = await getUserProfile(userWalletAddress);
+  
+  if (!userProfile) {
+    throw new Error('User profile not found');
+  }
+  
+  // Check if subscribed
+  const currentChannels = userProfile.Channels || [];
+  if (!currentChannels.includes(creatorId)) {
+    // Not subscribed, return existing profile
+    return userProfile;
+  }
+  
+  // Remove creatorId from Channels array
+  const updatedChannels = currentChannels.filter((id) => id !== creatorId);
+  
+  // Update user profile
+  return await updateUserProfile(userWalletAddress, {
+    Channels: updatedChannels,
+  });
+}
+
+/**
+ * Get subscribed channels for a user (returns array of stream data)
+ */
+export async function getSubscribedChannels(userWalletAddress: string): Promise<SupabaseStream[]> {
   const userProfile = await getUserProfile(userWalletAddress);
   
   if (!userProfile || !userProfile.Channels || userProfile.Channels.length === 0) {
     return [];
   }
   
-  // Fetch profiles for all subscribed creator IDs
-  const creatorProfiles = await Promise.all(
+  // Fetch stream data for all subscribed creator IDs
+  const creatorStreams = await Promise.all(
     userProfile.Channels.map(async (creatorId) => {
       try {
-        return await getUserProfile(creatorId);
+        const streams = await getStreamsByCreator(creatorId);
+        // Return the first stream (or most recent one) for each creator
+        return streams && streams.length > 0 ? streams[0] : null;
       } catch (error) {
-        console.error(`Failed to fetch profile for creator ${creatorId}:`, error);
+        console.error(`Failed to fetch stream for creator ${creatorId}:`, error);
         return null;
       }
     })
   );
   
-  // Filter out null values (failed fetches)
-  return creatorProfiles.filter((profile): profile is SupabaseUser => profile !== null);
+  // Filter out null values (failed fetches or creators with no streams)
+  return creatorStreams.filter((stream): stream is SupabaseStream => stream !== null);
 }
 
 // ==================== VIDEO OPERATIONS ====================

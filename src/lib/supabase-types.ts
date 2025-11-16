@@ -18,6 +18,7 @@ export interface SupabaseStream {
   color: string | null;
   fontSize: number | null;
   fontFamily?: string | null;
+  socialLinks?: string[] | null; // Array of JSON strings like ["{\"twitter\":\"https://...\"}", "{\"instagram\":\"https://...\"}"]
   Users: string[]; // Array of paying user wallet addresses
   donations: number[]; // Array of donation preset amounts
   created_at?: string; // ISO timestamp

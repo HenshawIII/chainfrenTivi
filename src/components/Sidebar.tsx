@@ -10,11 +10,9 @@ import { IoSettings } from 'react-icons/io5';
 import { RiEditFill } from 'react-icons/ri';
 import { TbHomeFilled } from 'react-icons/tb';
 import { usePrivy } from '@privy-io/react-auth';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store/store';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { getSubscribedChannels } from '@/lib/supabase-service';
-import { SupabaseUser } from '@/lib/supabase-types';
+import { SupabaseStream } from '@/lib/supabase-types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +33,29 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
   const pathname = usePathname();
   const router = useRouter();
   const { user, authenticated, ready } = usePrivy();
-  const solanaWalletAddress = useSelector((state: RootState) => state.user.solanaWalletAddress);
-  const [subscribedChannels, setSubscribedChannels] = useState<SupabaseUser[]>([]);
+  const [subscribedChannels, setSubscribedChannels] = useState<SupabaseStream[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
 
   // Get current user's wallet address
-  const currentUserAddress =
-    user?.wallet?.chainType === 'solana' && user?.wallet?.address
-      ? user.wallet.address
-      : solanaWalletAddress || '';
+  // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
+  const currentUserAddress = useMemo(() => {
+    if (!user?.linkedAccounts || user.linkedAccounts.length === 0) return '';
+    
+    // Check if primary login method is a wallet
+    const firstAccount = user.linkedAccounts[0];
+    if (firstAccount.type === 'wallet' && 'address' in firstAccount && firstAccount.address) {
+      return firstAccount.address;
+    }
+    
+    // Find a wallet from linked accounts
+    const walletAccount = user.linkedAccounts.find((account: any) => account.type === 'wallet' && 'address' in account && account.address);
+    if (walletAccount && 'address' in walletAccount && walletAccount.address) {
+      return walletAccount.address;
+    }
+    
+    return '';
+  }, [user?.linkedAccounts]);
 
   const isLoggedIn = authenticated && ready && !!currentUserAddress;
 
@@ -59,6 +70,7 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
       setLoadingChannels(true);
       try {
         const channels = await getSubscribedChannels(currentUserAddress);
+        // console.log('channels', channels);
         setSubscribedChannels(channels);
       } catch (error) {
         console.error('Failed to fetch subscribed channels:', error);
@@ -80,7 +92,7 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
 
   const handleSignup = () => {
     setShowSignupModal(false);
-    router.push('/dashboard');
+    router.push('/auth/login');
   };
 
   const links = [
@@ -137,19 +149,19 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
                   href={`/creator/${channel.creatorId}`}
                   className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-white/10 transition-colors"
                 >
-                  {channel.avatar ? (
+                  {channel.logo ? (
                     <img
-                      src={channel.avatar}
-                      alt={channel.displayName || 'Channel'}
+                      src={channel.logo}
+                      alt={channel.title || channel.streamName || 'Channel'}
                       className="w-8 h-8 rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-r from-yellow-500 to-teal-500 flex items-center justify-center text-black text-xs font-bold">
-                      {(channel.displayName || channel.creatorId.slice(0, 2)).toUpperCase()}
+                      {(channel.title || channel.streamName || channel.creatorId.slice(0, 2)).toUpperCase().slice(0, 2)}
                     </div>
                   )}
                   <span className="text-gray-300 text-sm truncate flex-1">
-                    {channel.displayName || channel.creatorId.slice(0, 8) + '...'}
+                    {channel.title || channel.streamName || channel.creatorId.slice(0, 8) + '...'}
                   </span>
                 </Link>
               ))
@@ -183,9 +195,9 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
       <AlertDialog open={showSignupModal} onOpenChange={setShowSignupModal}>
         <AlertDialogContent className="bg-white">
           <AlertDialogHeader>
-            <AlertDialogTitle>Sign Up Required</AlertDialogTitle>
+            <AlertDialogTitle>Sign In Required</AlertDialogTitle>
             <AlertDialogDescription>
-              You need to sign up and connect your wallet to add channels. Would you like to sign up now?
+              You need to sign in to add channels. Would you like to sign in now?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -194,7 +206,7 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
               onClick={handleSignup}
               className="bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black"
             >
-              Sign Up
+              Sign In
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

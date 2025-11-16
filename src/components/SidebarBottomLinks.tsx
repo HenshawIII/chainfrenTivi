@@ -4,8 +4,8 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
-import { useSelector, useDispatch } from 'react-redux';
-import { RootState, AppDispatch } from '@/store/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '@/store/store';
 import { useEffect, useMemo } from 'react';
 import { getAllStreams } from '@/features/streamAPI';
 import { RiVideoAddLine } from 'react-icons/ri';
@@ -21,17 +21,30 @@ const SidebarBottomLinks = ({ sidebarCollapsed, onCreateChannel }: SidebarBottom
   const pathname = usePathname();
   const dispatch = useDispatch<AppDispatch>();
   const { user, authenticated, ready } = usePrivy();
-  const solanaWalletAddress = useSelector((state: RootState) => state.user.solanaWalletAddress);
   const { streams } = useSelector((state: RootState) => state.streams);
   const isDashboard = pathname === '/dashboard';
 
-  // Get current user's wallet address
-  const currentUserAddress =
-    user?.wallet?.chainType === 'solana' && user?.wallet?.address
-      ? user.wallet.address
-      : solanaWalletAddress || '';
+  // Get creator address (wallet address)
+  // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
+  const creatorAddress = useMemo(() => {
+    if (!user?.linkedAccounts || user.linkedAccounts.length === 0) return null;
+    
+    // Check if primary login method is a wallet
+    const firstAccount = user.linkedAccounts[0];
+    if (firstAccount.type === 'wallet' && 'address' in firstAccount && firstAccount.address) {
+      return firstAccount.address;
+    }
+    
+    // Find a wallet from linked accounts
+    const walletAccount = user.linkedAccounts.find((account: any) => account.type === 'wallet' && 'address' in account && account.address);
+    if (walletAccount && 'address' in walletAccount && walletAccount.address) {
+      return walletAccount.address;
+    }
+    
+    return null;
+  }, [user?.linkedAccounts]);
 
-  const isLoggedIn = authenticated && ready && !!currentUserAddress;
+  const isLoggedIn = authenticated && ready && !!creatorAddress;
 
   // Fetch streams to check if user has created one
   useEffect(() => {
@@ -42,12 +55,12 @@ const SidebarBottomLinks = ({ sidebarCollapsed, onCreateChannel }: SidebarBottom
 
   // Check if user has created a stream
   const hasCreatedStream = useMemo(() => {
-    if (!currentUserAddress || !streams.length) return false;
+    if (!creatorAddress || !streams.length) return false;
     const userStreams = streams.filter(
-      (stream: any) => !!stream.playbackId && stream.creatorId?.value === currentUserAddress
+      (stream: any) => !!stream.playbackId && stream.creatorId?.value === creatorAddress
     );
     return userStreams.length > 0;
-  }, [streams, currentUserAddress]);
+  }, [streams, creatorAddress]);
 
   const handleCreateChannel = () => {
     if (isDashboard) {

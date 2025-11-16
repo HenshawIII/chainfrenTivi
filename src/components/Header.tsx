@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useLogout, usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth/solana';
-import {useCreateWallet} from '@privy-io/react-auth/solana';
 import { useEffect, useState } from 'react';
 import { FaRegUserCircle, FaWallet, FaGoogle, FaDiscord, FaTwitter } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
@@ -20,42 +19,32 @@ import clsx from 'clsx';
 import { useDispatch } from 'react-redux';
 import { setSolanaWalletAddress } from '@/features/userSlice';
 
-const Header = ({ toggleMenu, mobileOpen }: { toggleMenu: () => void; mobileOpen: boolean }) => {
+const Header = ({ toggleMenu, mobileOpen, title }: { toggleMenu: () => void; mobileOpen: boolean; title?: string }) => {
   const navigate = useRouter();
   const { user, ready } = usePrivy();
   const { wallets: solana } = useWallets();
-  const { createWallet } = useCreateWallet();
   const [solanaWallet, setSolanaWallet] = useState<string>('');
   const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const dispatch = useDispatch();
 
-  // Auto-create Solana wallet on login/ready
+  // Get existing Solana wallet on login/ready (no creation - Privy handles that automatically)
   useEffect(() => {
     if (!ready || !user) return;
-    async function setUp() {
-      let solanaWalletObj: any = solana.find((wallet: any) => wallet.walletClientType === 'privy' || wallet.clientType === 'privy');
-      if (!solanaWalletObj) {
-        try {
-          setLoading(true);
-          solanaWalletObj = await createWallet();
-          // toast.success('Solana wallet created successfully');
-        } catch (error) {
-          // toast.error('Failed to create Solana wallet');
-        } finally {
-          setLoading(false);
-        }
-      }
-      if (solanaWalletObj) {
-        const address = solanaWalletObj?.address ?? solanaWalletObj?.wallet?.address;
-        if (address) {
-          setSolanaWallet(address);
-          dispatch(setSolanaWalletAddress(address));
-        }
+    
+    // Find existing embedded wallet or any Solana wallet
+    const solanaWalletObj: any = solana.find((wallet: any) => 
+      wallet.walletClientType === 'privy' || wallet.clientType === 'privy'
+    ) || solana[0]; // Fallback to first wallet if no embedded wallet found
+    
+    if (solanaWalletObj) {
+      const address = solanaWalletObj?.address ?? solanaWalletObj?.wallet?.address;
+      if (address) {
+        setSolanaWallet(address);
+        dispatch(setSolanaWalletAddress(address));
       }
     }
-    setUp();
-  }, [ready, solana, user, createWallet, dispatch]);
+  }, [ready, solana, user, dispatch]);
 
   const { logout: handleLogout } = useLogout({
     onSuccess: () => {
@@ -75,10 +64,13 @@ const Header = ({ toggleMenu, mobileOpen }: { toggleMenu: () => void; mobileOpen
             <button onClick={toggleMenu} className="md:hidden">
               {mobileOpen ? <X className="h-7 w-7 text-white" /> : <Menu className="h-7 w-7 text-white" />}
             </button>
-            <div className=" rounded-md ">
+            <div className=" rounded-md flex items-center gap-1">
               {/* <Image src={Chainfren_Logo} alt={'header_Logo'} />
                */}
-               <h1 className="text-md sm:text-lg  font-bold text-white">ChainfrenTV - Live Streaming onChain</h1>
+               <h1 className="text-md sm:text-lg font-bold text-white">
+                 {title ? title : 'ChainfrenTV - Live Streaming onChain'}
+               </h1>
+               {title && <span className="text-yellow-300 text-sm  -translate-y-1">TV</span>}
             </div>
           </div>
           {/* Avatar */}

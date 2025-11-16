@@ -7,6 +7,8 @@ import Spinner from '@/components/Spinner';
 import Link from 'next/link';
 import { Stream, Asset } from '@/interfaces';
 import image1 from '@/assets/image1.png';
+import { useFetchPlaybackId } from '@/app/hook/usePlaybckInfo';
+import Image from 'next/image';
 // import Logo from '@/components/Logo';
 
 interface StreamsShowcaseProps {
@@ -74,7 +76,7 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
             {filteredStreams.map((stream) => (
               <Link 
                 key={stream.id} 
-                href={`/view/${stream.playbackId}?streamName=${encodeURIComponent(stream.name)}&id=${encodeURIComponent(stream.creatorId?.value || '')}`} 
+                href={`/creator/${stream.creatorId?.value}`} 
                 className="block bg-white/10 rounded-lg overflow-hidden shadow-lg hover:scale-105 transition-transform"
               >
                 <div className="h-40 bg-gray-800 flex items-center justify-center relative">
@@ -112,33 +114,7 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
         ) : assets && assets.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
             {assets.map((asset) => (
-              <Link 
-                key={asset.id} 
-                href={`/player/${asset.playbackId}?id=${encodeURIComponent(asset.id)}`} 
-                className="block bg-white/10 rounded-lg overflow-hidden shadow-lg md:w-[20vw]  m-5 hover:scale-105 transition-transform"
-              >
-                <div className="h-40 bg-gray-200 flex items-center justify-center relative">
-                  {asset.downloadUrl ? (
-                    // <img src={asset.downloadUrl} alt={asset.name} className="object-cover w-full h-full" />
-                    <span className="text-gray-800 text-center text-2xl font-bold">Video</span>
-                  ) : (
-                    <span className="text-gray-800 text-center text-2xl font-bold">Video</span>
-                    // <img src={image1.src} alt={asset.name} className="object-cover w-full h-full" />
-                  )}
-                  <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                    {asset.videoSpec?.duration ? 
-                      `${Math.floor(asset.videoSpec.duration / 60)}:${(asset.videoSpec.duration % 60).toString().padStart(2, '0')}` : 
-                      '00:00'
-                    }
-                  </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-semibold text-white mb-1 truncate">{asset.name}</h3>
-                  {asset.creatorId?.value && (
-                    <div className="text-xs text-yellow-300">by {asset.creatorId.value.slice(0, 5) + '...' + asset.creatorId.value.slice(-5)}</div>
-                  )}
-                </div>
-              </Link>
+              <VideoThumbnailCard key={asset.id} asset={asset} />
             ))}
           </div>
         ) : (
@@ -146,5 +122,47 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
         )
       )}
     </section>
+  );
+}
+
+// Video Thumbnail Card Component
+function VideoThumbnailCard({ asset }: { asset: Asset }) {
+  const { thumbnailUrl, loading } = useFetchPlaybackId(asset.playbackId);
+
+  return (
+    <Link 
+      href={`/player/${asset.playbackId}?id=${encodeURIComponent(asset.id)}`} 
+      className="block bg-white/10 rounded-lg overflow-hidden shadow-lg hover:scale-105 transition-transform"
+    >
+      <div className="h-40 bg-gray-800 flex items-center justify-center relative">
+        {loading ? (
+          <div className="flex items-center justify-center w-full h-full">
+            <Spinner />
+          </div>
+        ) : thumbnailUrl ? (
+          <Image
+            src={thumbnailUrl}
+            alt={asset.name}
+            fill
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+          />
+        ) : (
+          <span className="text-gray-400 text-center text-lg">No thumbnail</span>
+        )}
+        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+          {asset.videoSpec?.duration ? 
+            `${Math.floor(asset.videoSpec.duration / 60)}:${(asset.videoSpec.duration % 60).toString().padStart(2, '0')}` : 
+            '00:00'
+          }
+        </div>
+      </div>
+      <div className="p-4">
+        <h3 className="text-lg font-semibold text-white mb-1 truncate">{asset.name}</h3>
+        {asset.creatorId?.value && (
+          <div className="text-xs text-yellow-300">by {asset.creatorId.value.slice(0, 5) + '...' + asset.creatorId.value.slice(-5)}</div>
+        )}
+      </div>
+    </Link>
   );
 } 

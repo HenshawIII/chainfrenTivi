@@ -6,9 +6,9 @@ import * as tus from 'tus-js-client';
 import api from '@/utils/api';
 import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'sonner';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { getAssets } from '@/features/assetsAPI';
-import { AppDispatch, RootState } from '@/store/store';
+import { AppDispatch } from '@/store/store';
 import { createVideo } from '@/lib/supabase-service';
 import InputField from './ui/InputField';
 
@@ -26,7 +26,26 @@ export default function UploadVideoAsset({ onClose }: { onClose: () => void }) {
   const [presetValues, setPresetValues] = useState<number[]>([0, 0, 0, 0]);
 
   const dispatch = useDispatch<AppDispatch>();
-  const solanaWalletAddress = useSelector((state: RootState) => state.user.solanaWalletAddress);
+  
+  // Get creator address (wallet address)
+  // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
+  const creatorAddress = React.useMemo(() => {
+    if (!user?.linkedAccounts || user.linkedAccounts.length === 0) return null;
+    
+    // Check if primary login method is a wallet
+    const firstAccount = user.linkedAccounts[0];
+    if (firstAccount.type === 'wallet' && 'address' in firstAccount && firstAccount.address) {
+      return firstAccount.address;
+    }
+    
+    // Find a wallet from linked accounts
+    const walletAccount = user.linkedAccounts.find((account: any) => account.type === 'wallet' && 'address' in account && account.address);
+    if (walletAccount && 'address' in walletAccount && walletAccount.address) {
+      return walletAccount.address;
+    }
+    
+    return null;
+  }, [user?.linkedAccounts]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
@@ -83,13 +102,15 @@ export default function UploadVideoAsset({ onClose }: { onClose: () => void }) {
     setProgress(0);
 
     try {
+      if (!creatorAddress) {
+        throw new Error('Wallet address not found. Please connect a wallet.');
+      }
+
       const response = await api.post('/asset/request-upload', {
         name: title,
         creatorId: {
           type: 'unverified',
-          value: user?.wallet?.chainType === 'solana' && user?.wallet?.address
-            ? user.wallet.address
-            : solanaWalletAddress,
+          value: creatorAddress,
         },
       });
 
@@ -97,21 +118,13 @@ export default function UploadVideoAsset({ onClose }: { onClose: () => void }) {
       console.log('response2', playbackId, name);
 
       // Save video metadata to Supabase
-      const creatorId = user?.wallet?.chainType === 'solana' && user?.wallet?.address
-        ? user.wallet.address
-        : solanaWalletAddress;
-
-      if (!creatorId) {
-        throw new Error('Creator ID is required');
-      }
-
       try {
         await createVideo({
           playbackId: playbackId,
           viewMode: viewMode || 'free',
           amount: amount || null,
           assetName: name || title,
-          creatorId: creatorId,
+          creatorId: creatorAddress,
           Users: [],
           donations: presetValues || [],
         });

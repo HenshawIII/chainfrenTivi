@@ -1,16 +1,62 @@
 'use client';
 
-import { Copy, User } from 'lucide-react';
+import { Copy, User, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store/store';
-import { useProfile } from '@/app/hook/useProfile';
+import { usePrivy } from '@privy-io/react-auth';
+import { useEffect, useMemo, useState } from 'react';
+import { getUserProfile } from '@/lib/supabase-service';
+import { SupabaseUser } from '@/lib/supabase-types';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 
 export function ProfileColumn() {
-  const { profile: profileData, loading, hasProfile, creatorAddress } = useProfile();
-  const solanaWalletAddress = useSelector((state: RootState) => state.user.solanaWalletAddress);
+  const { user } = usePrivy();
+  const [userProfile, setUserProfile] = useState<SupabaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Get creator address (wallet address)
+  // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
+  const creatorAddress = useMemo(() => {
+    if (!user?.linkedAccounts || user.linkedAccounts.length === 0) return null;
+    
+    // Check if primary login method is a wallet
+    const firstAccount = user.linkedAccounts[0];
+    if (firstAccount.type === 'wallet' && 'address' in firstAccount && firstAccount.address) {
+      return firstAccount.address;
+    }
+    
+    // Find a wallet from linked accounts
+    const walletAccount = user.linkedAccounts.find((account: any) => account.type === 'wallet' && 'address' in account && account.address);
+    if (walletAccount && 'address' in walletAccount && walletAccount.address) {
+      return walletAccount.address;
+    }
+    
+    return null;
+  }, [user?.linkedAccounts]);
+
+  // Fetch user profile from users table
+  useEffect(() => {
+    if (!creatorAddress) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchUserProfile = async () => {
+      try {
+        setLoading(true);
+        const profile = await getUserProfile(creatorAddress);
+        setUserProfile(profile);
+      } catch (error: any) {
+        console.error('Error fetching user profile:', error);
+        setUserProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [creatorAddress]);
 
   const handleCopyAddress = async () => {
     if (!creatorAddress) return;
@@ -29,108 +75,85 @@ export function ProfileColumn() {
 
   if (loading) {
     return (
-      <div className="w-64 p-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg">
+      <div className="w-[400px] p-4 px-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg">
         <div className="animate-pulse space-y-4">
-          <div className="h-24 bg-white/20 rounded-lg"></div>
-          <div className="h-4 bg-white/20 rounded w-3/4"></div>
-          <div className="h-4 bg-white/20 rounded w-1/2"></div>
+          <div className="h-24 bg-white/20 rounded-full mx-auto w-24"></div>
+          <div className="h-4 bg-white/20 rounded w-3/4 mx-auto"></div>
+          <div className="h-4 bg-white/20 rounded w-1/2 mx-auto"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="w-[400px] p-4 px-10  bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg space-y-4">
-      {hasProfile && profileData ? (
-        <>
-          {/* Profile Image */}
-          <div className="flex justify-center">
-            {profileData.avatar ? (
-              <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-yellow-400">
-                <Image
-                  src={profileData.avatar}
-                  alt={profileData.displayName || 'Profile'}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-gradient-to-r from-yellow-500/30 to-teal-500/30 flex items-center justify-center border-2 border-yellow-400">
-                <User className="w-12 h-12 text-yellow-400" />
-              </div>
-            )}
+    <div className="w-[400px] p-4 px-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg space-y-4">
+      {/* Profile Image */}
+      <div className="flex justify-center">
+        {userProfile?.avatar ? (
+          <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-yellow-400">
+            <Image
+              src={userProfile.avatar}
+              alt="Profile"
+              fill
+              className="object-cover"
+              unoptimized
+            />
           </div>
-
-          {/* Profile Name */}
-          <div className="text-center">
-            <h3 className="text-white font-bold text-lg">{profileData.displayName}</h3>
+        ) : (
+          <div className="w-24 h-24 rounded-full bg-gradient-to-r from-yellow-500/30 to-teal-500/30 flex items-center justify-center border-2 border-yellow-400">
+            <User className="w-12 h-12 text-yellow-400" />
           </div>
+        )}
+      </div>
 
-          {/* Wallet Address */}
-          {creatorAddress && (
-            <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg border border-white/10">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-300 text-sm font-mono">{formatAddress(creatorAddress)}</span>
-              </div>
-              <button
-                onClick={handleCopyAddress}
-                className="p-1 hover:bg-white/10 rounded transition-colors"
-                title="Copy address"
-              >
-                <Copy className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-          )}
-
-          {/* Bio Preview */}
-          {profileData.bio && (
-           <div className='w-full '>Bio : <p className="text-gray-300 text-sm">{profileData.bio}</p></div>
-          )}
-
-          {/* View Profile Link */}
-          <div className='w-full flex justify-center text-center'>
-          <Link
-            href='/dashboard/settings'
-            className="w-full py-2 px-4 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-colors text-sm font-medium"
+      {/* Wallet Address */}
+      {creatorAddress && (
+        <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg border border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-300 text-sm font-mono">{formatAddress(creatorAddress)}</span>
+          </div>
+          <button
+            onClick={handleCopyAddress}
+            className="p-1 hover:bg-white/10 rounded transition-colors"
+            title="Copy address"
           >
-            Edit Profile
-          </Link>
-          </div>
-        </>
-      ) : (
-        /* No Profile State */
-        <div className="text-center flex flex-col space-y-4">
-          <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center mx-auto border-2 border-dashed border-white/30">
-            <User className="w-12 h-12 text-white/40" />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-white font-semibold">Complete Your Profile</h3>
-            <p className="text-gray-400 text-sm">
-              Add your display name, bio, and profile image to personalize your channel.
-            </p>
-          </div>
-          {creatorAddress && (
-            <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg border border-white/10">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-300 text-sm font-mono">{formatAddress(creatorAddress)}</span>
-              </div>
-              <button
-                onClick={handleCopyAddress}
-                className="p-1 hover:bg-white/10 rounded transition-colors"
-                title="Copy address"
-              >
-                <Copy className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-          )}
-          <Link
-            href='/dashboard/settings'
-            className="w-[50%] mx-auto py-2 px-4 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-colors text-sm  font-medium"
-          >
-            Set Up Profile
-          </Link>
+            <Copy className="w-4 h-4 text-gray-400" />
+          </button>
         </div>
       )}
+
+      {/* Profile Link */}
+      <Link
+        href="/dashboard/profile"
+        className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-colors text-sm font-medium"
+      >
+        <Settings className="w-4 h-4" />
+      
+      </Link>
+
+      {/* Tabs */}
+      <Tabs defaultValue="archives" className="w-full">
+        <TabsList className="w-full bg-white/5 border border-white/10 rounded-lg p-1">
+          <TabsTrigger 
+            value="archives" 
+            className="flex-1 text-gray-400 data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-md transition-colors"
+          >
+            Archives
+          </TabsTrigger>
+          <TabsTrigger 
+            value="transactions" 
+            className="flex-1 text-gray-400 data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-md transition-colors"
+          >
+            Transactions
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="archives" className="mt-4 text-center py-8">
+          <p className="text-gray-400 text-sm">Not archived yet</p>
+        </TabsContent>
+        <TabsContent value="transactions" className="mt-4 text-center py-8">
+          <p className="text-gray-400 text-sm">Not transacted yet</p>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

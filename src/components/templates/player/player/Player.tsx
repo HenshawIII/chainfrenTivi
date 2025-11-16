@@ -617,18 +617,18 @@ export function PlayerWithControls({
  * Minimal loading UI that appears before or during buffering.
  */
 export const PlayerLoading = ({ children }: { children?: React.ReactNode }) => (
-  <div className="relative mx-auto flex max-w-2xl flex-col-reverse gap-3 overflow-hidden rounded-sm bg-white/70 px-3 py-2 animate-pulse">
+  <div className="relative mx-auto flex max-w-2xl flex-col-reverse gap-3 overflow-hidden rounded-sm bg-black px-3 py-2 animate-pulse">
     <div className="flex justify-between">
       <div className="flex items-center gap-2">
-        <div className="h-6 w-6 animate-pulse rounded-lg bg-white/5" />
-        <div className="h-6 w-16 animate-pulse rounded-lg bg-white/5 md:h-7 md:w-20" />
+        <div className="h-6 w-6 animate-pulse rounded-lg bg-gray-800" />
+        <div className="h-6 w-16 animate-pulse rounded-lg bg-gray-800 md:h-7 md:w-20" />
       </div>
       <div className="flex items-center gap-2">
-        <div className="h-6 w-6 animate-pulse rounded-lg bg-white/5" />
-        <div className="h-6 w-6 animate-pulse rounded-lg bg-white/5" />
+        <div className="h-6 w-6 animate-pulse rounded-lg bg-gray-800" />
+        <div className="h-6 w-6 animate-pulse rounded-lg bg-gray-800" />
       </div>
     </div>
-    <div className="h-2 w-full animate-pulse rounded-lg bg-white/5" />
+    <div className="h-2 w-full animate-pulse rounded-lg bg-gray-800" />
     {children}
   </div>
 );

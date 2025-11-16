@@ -16,6 +16,7 @@ interface CreateLivestreamProps {
   fontSize: string;
   logo: string;
   donation?: number[];
+  socialLinks?: string[];
 }
 
 interface UpdateLivestreamProps {
@@ -45,6 +46,7 @@ export const createLivestream = createAsyncThunk(
       fontSize,
       logo,
       donation,
+      socialLinks,
     }: CreateLivestreamProps,
     { rejectWithValue },
   ) => {
@@ -77,6 +79,7 @@ export const createLivestream = createAsyncThunk(
           color: color || null,
           fontSize: fontSize ? parseInt(fontSize) : null,
           fontFamily: null,
+          socialLinks: socialLinks || null,
           Users: [],
           donations: donation || [],
         };

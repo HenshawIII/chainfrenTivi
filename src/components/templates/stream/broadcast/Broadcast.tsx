@@ -697,18 +697,18 @@ export const BroadcastContainer = () => {
 };
 
 export const BroadcastLoading = () => (
-  <div className="w-full px-3 md:px-3 py-3 gap-3 flex-col-reverse flex aspect-video max-w-2xl mx-auto animate-pulse bg-white/10 overflow-hidden rounded-sm">
+  <div className="w-full px-3 md:px-3 py-3 gap-3 flex-col-reverse flex aspect-video max-w-2xl mx-auto animate-pulse bg-black overflow-hidden rounded-sm">
     <div className="flex justify-between">
       <div className="flex items-center gap-2">
-        <div className="w-7 h-7 animate-pulse bg-white/5 overflow-hidden rounded-lg" />
-        <div className="w-16 h-6 md:w-20 md:h-7 animate-pulse bg-white/5 overflow-hidden rounded-lg" />
+        <div className="w-7 h-7 animate-pulse bg-gray-800 overflow-hidden rounded-lg" />
+        <div className="w-16 h-6 md:w-20 md:h-7 animate-pulse bg-gray-800 overflow-hidden rounded-lg" />
       </div>
       <div className="flex items-center gap-2">
-        <div className="w-7 h-7 animate-pulse bg-white/5 overflow-hidden rounded-lg" />
-        <div className="w-7 h-7 animate-pulse bg-white/5 overflow-hidden rounded-lg" />
+        <div className="w-7 h-7 animate-pulse bg-gray-800 overflow-hidden rounded-lg" />
+        <div className="w-7 h-7 animate-pulse bg-gray-800 overflow-hidden rounded-lg" />
       </div>
     </div>
-    <div className="w-full h-2 animate-pulse bg-white/5 overflow-hidden rounded-lg" />
+    <div className="w-full h-2 animate-pulse bg-gray-800 overflow-hidden rounded-lg" />
   </div>
 );
 

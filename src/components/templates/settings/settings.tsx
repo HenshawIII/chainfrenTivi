@@ -45,7 +45,7 @@ const Settings: React.FC = () => {
           <Header toggleMenu={toggleMobileMenu} mobileOpen={mobileMenuOpen} />
           <div className="m-4 p-6">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg p-6">
-              <h1 className="text-2xl font-bold text-white mb-6">Creator Profile</h1>
+              {/* <h1 className="text-2xl font-bold text-white mb-6">Channel Profile</h1> */}
               <ProfileCustomization />
             </div>
           </div>

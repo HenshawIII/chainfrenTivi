@@ -42,6 +42,11 @@ export default function RootLayout({
           <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_ENVIRONMENT_ID ?? ''}
       config={{
+        embeddedWallets: {
+          ethereum: {
+            createOnLogin: 'users-without-wallets',
+          }
+        },
         appearance: {
           landingHeader: '',
           loginMessage: 'Welcome to ChainfrenTV',
@@ -49,11 +54,11 @@ export default function RootLayout({
           accentColor: '#facc15', // Yellow to match ChainfrenTV branding
           logo: '',
           // showWalletLoginFirst: false,
-          walletChainType:'ethereum-and-solana',
-          walletList: [ 'phantom','metamask','wallet_connect','rainbow','binance','coinbase_wallet'],
+          walletChainType:'ethereum-only',
+          walletList: [ 'metamask','wallet_connect','rainbow','binance','coinbase_wallet'],
         
         },
-        externalWallets: {solana: {connectors: toSolanaWalletConnectors()}},
+    
         loginMethods:['wallet','email','farcaster'],
       }}
     >
