@@ -40,6 +40,7 @@ const Dashboard = () => {
   const { selectedChannelId: contextChannelId, setSelectedChannelId } = useChannel();
   const [showUserSetupModal, setShowUserSetupModal] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(true);
+  const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
   
@@ -123,13 +124,18 @@ const Dashboard = () => {
 
       try {
         const profile = await getUserProfile(creatorAddress);
-        // Show modal if user doesn't have displayName or avatar
-        if (!profile || !profile.displayName || !profile.avatar) {
+        // Check if user doesn't have displayName (first-time user)
+        const isFirstTime = !profile || !profile.displayName;
+        setIsFirstTimeUser(isFirstTime);
+        
+        // Show modal if user doesn't have displayName (required) or avatar (optional)
+        if (!profile || !profile.displayName) {
           setShowUserSetupModal(true);
         }
       } catch (error) {
         console.error('Error checking user profile:', error);
-        // Show modal on error to be safe
+        // Show modal on error to be safe, treat as first-time
+        setIsFirstTimeUser(true);
         setShowUserSetupModal(true);
       } finally {
         setCheckingProfile(false);
@@ -147,6 +153,9 @@ const Dashboard = () => {
   }, [urlChannelId, contextChannelId, setSelectedChannelId]);
 
   const handleProfileSetupSuccess = () => {
+    // User has completed setup, no longer first-time
+    setIsFirstTimeUser(false);
+    setShowUserSetupModal(false);
     // Trigger a refresh of ProfileColumn by dispatching an event or using context
     // For now, we'll rely on ProfileColumn's useEffect to refetch
     window.dispatchEvent(new CustomEvent('profileUpdated'));
@@ -249,8 +258,14 @@ const filteredAssetsForChannel = useMemo(() => {
     <>
       <UserSetupModal
         open={showUserSetupModal}
-        onClose={() => setShowUserSetupModal(false)}
+        onClose={() => {
+          // Only allow closing if not a first-time user
+          if (!isFirstTimeUser) {
+            setShowUserSetupModal(false);
+          }
+        }}
         onSuccess={handleProfileSetupSuccess}
+        isFirstTime={isFirstTimeUser}
       />
     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-black via-gray-950 to-black">
       {/* Mobile Sidebar */}

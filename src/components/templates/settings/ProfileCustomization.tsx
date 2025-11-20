@@ -8,7 +8,7 @@ import { Copy, ExternalLink } from 'lucide-react';
 import { useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { AppDispatch } from '@/store/store';
-import { uploadImage, getStreamsByCreator, updateStream } from '@/lib/supabase-service';
+import { uploadImage, getStreamsByCreator, updateStream, getUserProfile } from '@/lib/supabase-service';
 import { createLivestream } from '@/features/streamAPI';
 import { clsx } from 'clsx';
 
@@ -45,6 +45,7 @@ export function ProfileCustomization() {
   });
   const [existingStream, setExistingStream] = useState<any>(null);
   const [loadingStream, setLoadingStream] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   // Get creator address (wallet address)
   // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
@@ -160,14 +161,32 @@ export function ProfileCustomization() {
 
   const loading = loadingStream;
 
-  // Generate profile URL
+  // Fetch user profile to get username
   useEffect(() => {
-   
-    if (creatorAddress) {
+    const fetchUserProfile = async () => {
+      if (!creatorAddress) return;
+      try {
+        const profile = await getUserProfile(creatorAddress);
+        setUserProfile(profile);
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+    fetchUserProfile();
+  }, [creatorAddress]);
+
+  // Generate profile URL using username
+  useEffect(() => {
+    if (creatorAddress && userProfile?.displayName) {
+      const host = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+      // Use username (displayName) in the URL
+      setProfileUrl(`${host}/creator/${encodeURIComponent(userProfile.displayName)}`);
+    } else if (creatorAddress) {
+      // Fallback to wallet address if username not available yet
       const host = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
       setProfileUrl(`${host}/creator/${creatorAddress}`);
     }
-  }, [creatorAddress]);
+  }, [creatorAddress, userProfile?.displayName]);
 
   const handleInputChange = (field: string, value: string) => {
     setProfileData(prev => ({

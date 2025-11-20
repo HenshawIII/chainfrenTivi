@@ -34,6 +34,7 @@ export interface VideoCardProps {
   assetId?: string;
   playbackId: string;
   creatorId?: string;
+  onPlayClick?: () => void;
 }
 export interface Stream {
   id: string;

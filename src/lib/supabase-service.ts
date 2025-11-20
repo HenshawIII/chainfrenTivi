@@ -283,6 +283,27 @@ export async function getUserProfile(creatorId: string): Promise<SupabaseUser | 
 }
 
 /**
+ * Get user profile by username (displayName)
+ */
+export async function getUserProfileByUsername(username: string): Promise<SupabaseUser | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('displayName', username)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      // No rows returned
+      return null;
+    }
+    throw new Error(`Failed to fetch user profile by username: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
  * Create user profile
  */
 export async function createUserProfile(userData: UserInsert): Promise<SupabaseUser> {

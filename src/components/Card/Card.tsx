@@ -127,11 +127,23 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
   );
 };
 // Asset Card
-export const VideoCard: React.FC<VideoCardProps> = ({ title, imageUrl, createdAt, playbackId, assetData, format }) => {
+export const VideoCard: React.FC<VideoCardProps> = ({ title, imageUrl, createdAt, playbackId, assetData, format, onPlayClick }) => {
   // const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { views: videocount } = usePlaybackMetrics(playbackId || '');
   const { thumbnailUrl, loading } = useFetchPlaybackId(assetData.playbackId);
-  const handlePlayClick = () => {
+  
+  // Handle clicks - if onPlayClick is provided, use it; otherwise open in new tab
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // If onPlayClick callback is provided, use it for inline playback
+    if (onPlayClick) {
+      onPlayClick();
+      return;
+    }
+    
+    // Otherwise, default behavior: open in new tab
     if (assetData.playbackId) {
       window.open(`/player/${assetData.playbackId}?id=${encodeURIComponent(assetData.id)}`, '_blank');
     }
@@ -139,7 +151,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({ title, imageUrl, createdAt
 
   return (
     <div className="w-full h-full flex flex-col group">
-      <div className="w-full bg-gray-200 rounded-md overflow-hidden relative">
+      <div 
+        className={`w-full bg-gray-200 rounded-md overflow-hidden relative ${onPlayClick ? 'cursor-pointer' : ''}`}
+        onClick={handleClick}
+        onMouseDown={(e) => {
+          // Prevent any default behavior on mouse down
+          if (e.button === 0) { // Left click only
+            e.preventDefault();
+          }
+        }}
+      >
         {loading ? (
           <div className="flex items-center w-full max-sm:h-[220px] h-[300px] lg:h-[200px] justify-center">
             <p className="text-gray-800">Loading</p>
@@ -148,16 +169,21 @@ export const VideoCard: React.FC<VideoCardProps> = ({ title, imageUrl, createdAt
           <Image
             src={thumbnailUrl || imageUrl}
             alt={assetData.name}
-            className="rounded-md w-full max-sm:h-[220px] h-[300px] lg:h-[200px] object-cover"
+            className="rounded-md w-full max-sm:h-[220px] h-[300px] lg:h-[200px] object-cover pointer-events-none"
             width={400}
             height={180}
+            draggable={false}
           />
         )}
-        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded z-10 pointer-events-none">
           {videocount?.viewCount || 0} views
         </div>
-        <div className="absolute inset-0 flex justify-center items-center group-hover:bg-black bg-opacity-0 group-hover:bg-opacity-40 transition duration-300">
-          <button onClick={handlePlayClick} className="text-white text-4xl opacity-0 group-hover:opacity-100">
+        <div className="absolute inset-0 flex justify-center items-center group-hover:bg-black bg-opacity-0 group-hover:bg-opacity-40 transition duration-300 pointer-events-none">
+          <button 
+            onClick={handleClick}
+            className="text-white text-4xl opacity-0 group-hover:opacity-100 pointer-events-auto"
+            type="button"
+          >
             <FaPlay />
           </button>
         </div>
@@ -169,7 +195,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ title, imageUrl, createdAt
             {format ? `.${format}` : ''}
           </h2>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
           <AssetPopup asset={assetData} />
         </div>
       </div>

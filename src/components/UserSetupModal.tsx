@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'sonner';
 import { Bars } from 'react-loader-spinner';
@@ -14,9 +14,10 @@ interface UserSetupModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  isFirstTime?: boolean; // If true, modal cannot be closed until username is set
 }
 
-export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps) {
+export function UserSetupModal({ open, onClose, onSuccess, isFirstTime = false }: UserSetupModalProps) {
   const { user } = usePrivy();
   const [displayName, setDisplayName] = useState('');
   const [avatar, setAvatar] = useState('');
@@ -27,6 +28,14 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
     avatar?: string;
   }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const submittedSuccessfullyRef = useRef(false);
+
+  // Reset success flag when modal opens
+  useEffect(() => {
+    if (open) {
+      submittedSuccessfullyRef.current = false;
+    }
+  }, [open]);
 
   // Get creator address (wallet address)
   const creatorAddress = useMemo(() => {
@@ -96,9 +105,8 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
       }
     }
 
-    if (!avatar && !avatarFile) {
-      newErrors.avatar = 'Profile picture is required';
-    }
+    // Profile picture is optional, so we don't validate it
+    // Avatar validation removed - it's optional
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -121,7 +129,7 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
 
       let avatarUrl = avatar;
 
-      // Upload avatar if a new file was selected
+      // Upload avatar if a new file was selected (optional)
       if (avatarFile) {
         const uploadedUrl = await uploadImage(avatarFile, 'user-avatars');
         if (!uploadedUrl) {
@@ -130,6 +138,10 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
           return;
         }
         avatarUrl = uploadedUrl;
+      }
+      // If no avatar was selected, use empty string (optional)
+      if (!avatarUrl) {
+        avatarUrl = '';
       }
 
       // Get existing profile to preserve Channels
@@ -147,7 +159,9 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
       });
 
       toast.success('Profile setup complete!');
+      submittedSuccessfullyRef.current = true;
       onSuccess();
+      // Close modal after success (parent will have updated isFirstTimeUser state)
       onClose();
     } catch (error: any) {
       console.error('Error setting up profile:', error);
@@ -158,22 +172,50 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(open) => !open && onClose()}>
+    <Dialog.Root 
+      open={open} 
+      onOpenChange={(open) => {
+        // Allow closing if form was submitted successfully
+        if (!open && submittedSuccessfullyRef.current) {
+          onClose();
+          return;
+        }
+        // Prevent closing if it's a first-time setup and user is trying to close manually
+        if (!open && isFirstTime) {
+          return; // Don't allow closing
+        }
+        if (!open) {
+          onClose();
+        }
+      }}
+      modal={true}
+    >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100]" />
+        <Dialog.Overlay 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100]"
+          onClick={(e) => {
+            // Prevent closing on overlay click for first-time users
+            if (isFirstTime) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+        />
         <Dialog.Content className="fixed left-1/2 top-1/2 max-h-[85vh] w-[90vw] flex mt-4 flex-col justify-center items-center max-w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-gray-900/95 backdrop-blur-sm border border-white/20 px-8 py-6 shadow-2xl z-[101]">
           <Dialog.Title className="text-white text-center text-2xl font-bold mb-2">
-            Complete Your Profile
+            {isFirstTime ? 'Welcome! Set Up Your Profile' : 'Complete Your Profile'}
           </Dialog.Title>
           <Dialog.Description className="text-gray-300 text-center text-sm mb-6">
-            Please provide a username and profile picture to continue
+            {isFirstTime 
+              ? 'Please set a username to continue. Profile picture is optional.'
+              : 'Please provide a username and optionally a profile picture'}
           </Dialog.Description>
 
           <div className="w-full space-y-4">
             {/* Avatar Upload */}
             <div>
               <label className="block text-sm font-medium mb-2 text-white">
-                Profile Picture <span className="text-red-400">*</span>
+                Profile Picture <span className="text-gray-400 text-xs">(Optional)</span>
               </label>
               <div className="flex items-center gap-4">
                 {avatar ? (
@@ -254,15 +296,18 @@ export function UserSetupModal({ open, onClose, onSuccess }: UserSetupModalProps
             </button>
           </div>
 
-          <Dialog.Close asChild>
-            <button
-              className="absolute right-2.5 top-2.5 inline-flex size-[25px] appearance-none items-center justify-center rounded-full text-white hover:bg-white/10 focus:shadow-[0_0_0_2px] focus:shadow-yellow-500 focus:outline-none transition-colors"
-              aria-label="Close"
-              disabled={loading}
-            >
-              <IoMdClose className="text-white font-medium text-2xl" />
-            </button>
-          </Dialog.Close>
+          {/* Only show close button if not first-time setup */}
+          {!isFirstTime && (
+            <Dialog.Close asChild>
+              <button
+                className="absolute right-2.5 top-2.5 inline-flex size-[25px] appearance-none items-center justify-center rounded-full text-white hover:bg-white/10 focus:shadow-[0_0_0_2px] focus:shadow-yellow-500 focus:outline-none transition-colors"
+                aria-label="Close"
+                disabled={loading}
+              >
+                <IoMdClose className="text-white font-medium text-2xl" />
+              </button>
+            </Dialog.Close>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

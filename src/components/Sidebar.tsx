@@ -11,7 +11,7 @@ import { RiEditFill } from 'react-icons/ri';
 import { TbHomeFilled } from 'react-icons/tb';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useMemo } from 'react';
-import { getSubscribedChannels, getStreamsByCreator } from '@/lib/supabase-service';
+import { getSubscribedChannels, getStreamsByCreator, getUserProfile } from '@/lib/supabase-service';
 import { SupabaseStream } from '@/lib/supabase-types';
 import { useChannel } from '@/context/ChannelContext';
 import {
@@ -42,6 +42,7 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [loadingOwnedChannels, setLoadingOwnedChannels] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
+  const [creatorIdToUsername, setCreatorIdToUsername] = useState<Record<string, string>>({});
 
   // Get current user's wallet address
   // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
@@ -78,6 +79,25 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
         const channels = await getSubscribedChannels(currentUserAddress);
         // console.log('channels', channels);
         setSubscribedChannels(channels);
+        
+        // Fetch usernames for all unique creator IDs
+        const uniqueCreatorIds = Array.from(new Set(channels.map(ch => ch.creatorId)));
+        const usernameMap: Record<string, string> = {};
+        
+        await Promise.all(
+          uniqueCreatorIds.map(async (creatorId) => {
+            try {
+              const profile = await getUserProfile(creatorId);
+              if (profile?.displayName) {
+                usernameMap[creatorId] = profile.displayName;
+              }
+            } catch (error) {
+              console.error(`Failed to fetch username for ${creatorId}:`, error);
+            }
+          })
+        );
+        
+        setCreatorIdToUsername(usernameMap);
       } catch (error) {
         console.error('Failed to fetch subscribed channels:', error);
       } finally {
@@ -131,34 +151,6 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
 
   return (
     <>
-      {/* <nav className="w-full mt-2 backdrop-blur-sm border border-white/20 rounded-lg p-2">
-        <div className="flex flex-col gap-2">
-          {links.map((link) => {
-            const IconComponent = link.icon;
-            const isActive = pathname === link.href;
-            return (
-              <Link href={link.href} key={link.text}>
-                <div
-                  className={clsx(
-                    'flex items-center rounded-md py-3 gap-3 px-4 transition-all duration-200',
-                    isActive
-                      ? 'bg-gradient-to-r from-yellow-500 to-teal-500 text-black shadow-lg'
-                      : 'text-gray-500 hover:text-gray-300 hover:bg-white/20',
-                    sidebarCollapsed && 'justify-center',
-                  )}
-                >
-                  <IconComponent className={'inline-block h-5 w-5'} />
-
-                  {!sidebarCollapsed && <p className="font-bold">{link.text}</p>}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </nav> */}
-
-      
-
       {/* Subscribed Channels Section */}
       {!sidebarCollapsed && (
         <div className="w-full mt-4 backdrop-blur-sm border border-white/20 rounded-lg p-2">
@@ -173,10 +165,13 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
             ) : subscribedChannels.length === 0 ? (
               <div className="text-gray-400 text-sm px-2 py-2">No subscribed channels</div>
             ) : (
-              subscribedChannels.map((channel) => (
+              subscribedChannels.map((channel) => {
+                // Use username if available, otherwise fallback to creatorId (wallet address)
+                const profileIdentifier = creatorIdToUsername[channel.creatorId] || channel.creatorId;
+                return (
                 <Link
                   key={channel.creatorId}
-                  href={`/creator/${channel.creatorId}`}
+                  href={`/creator/${encodeURIComponent(profileIdentifier)}`}
                   className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-white/10 transition-colors"
                 >
                   {channel.logo ? (
@@ -187,14 +182,15 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-r from-yellow-500 to-teal-500 flex items-center justify-center text-black text-xs font-bold">
-                      {(channel.title || channel.streamName || channel.creatorId.slice(0, 2)).toUpperCase().slice(0, 2)}
+                      {((channel.title || channel.streamName || channel.creatorId)?.slice(0, 2) || '??').toUpperCase()}
                     </div>
                   )}
                   <span className="text-gray-300 text-sm truncate flex-1">
-                    {channel.title || channel.streamName || channel.creatorId.slice(0, 8) + '...'}
+                    {channel.title || channel.streamName || (channel.creatorId?.slice(0, 8) + '...') || 'Untitled Channel'}
                   </span>
                 </Link>
-              ))
+                );
+              })
             )}
           </div>
           <button

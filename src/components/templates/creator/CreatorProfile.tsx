@@ -12,7 +12,7 @@ import image1 from '@/assets/image1.png';
 import { Bars } from 'react-loader-spinner';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { getUserProfile, subscribeToCreator, unsubscribeFromCreator, getStreamsByCreator } from '@/lib/supabase-service';
+import { getUserProfile, getUserProfileByUsername, subscribeToCreator, unsubscribeFromCreator, getStreamsByCreator } from '@/lib/supabase-service';
 import SectionCard from '@/components/Card/SectionCard';
 import { Menu, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -31,6 +31,7 @@ import { ProfileColumn } from '@/components/templates/dashboard/ProfileColumn';
 import { PlayerWithControls } from '@/components/templates/player/player/Player';
 import { usePlaybackInfo } from '@/app/hook/usePlaybckInfo';
 import { PlayerLoading } from '@/components/templates/player/player/Player';
+import { VideoPlayer } from '@/components/templates/dashboard/VideoPlayer';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +66,7 @@ interface CreatorProfileData {
 }
 
 interface CreatorProfileProps {
-  creatorId: string;
+  creatorId: string; // This will now be the username from the URL
 }
 
 // Stream Player Component for inline viewing
@@ -127,6 +128,34 @@ function StreamPlayerView({
   );
 }
 
+// Video Player Component for inline viewing
+function VideoPlayerView({
+  playbackId,
+  title,
+  onClose,
+}: {
+  playbackId: string;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="w-full">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-white font-bold text-lg">{title}</h3>
+        <button
+          onClick={onClose}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm font-semibold"
+        >
+          Close Player
+        </button>
+      </div>
+      <div className="w-full border border-white/20 rounded-lg overflow-hidden bg-black" style={{ minHeight: '600px', height: 'calc(100vh - 400px)' }}>
+        <VideoPlayer playbackId={playbackId} />
+      </div>
+    </div>
+  );
+}
+
 export function CreatorProfile({ creatorId }: CreatorProfileProps) {
   const dispatch = useDispatch<AppDispatch>();
   const { streams, loading: streamsLoading, error: streamsError } = useSelector((state: RootState) => state.streams);
@@ -149,6 +178,11 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
     playbackId: string;
     title: string;
   } | null>(null);
+  const [selectedVideoForViewing, setSelectedVideoForViewing] = useState<{
+    playbackId: string;
+    title: string;
+  } | null>(null);
+  const [actualCreatorId, setActualCreatorId] = useState<string | null>(null); // The wallet address from username lookup
 
   // Get current user's wallet address
   // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
@@ -172,9 +206,9 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
   // Check if viewer is the creator
   const isCreator = useMemo(() => {
-    if (!currentUserAddress || !creatorId) return false;
-    return currentUserAddress.toLowerCase() === creatorId.toLowerCase();
-  }, [currentUserAddress, creatorId]);
+    if (!currentUserAddress || !actualCreatorId) return false;
+    return currentUserAddress.toLowerCase() === actualCreatorId.toLowerCase();
+  }, [currentUserAddress, actualCreatorId]);
 
   // Check if user is logged in
   const isLoggedIn = authenticated && ready && !!currentUserAddress;
@@ -182,7 +216,7 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
   // Check subscription status when user is logged in
   useEffect(() => {
     const checkSubscriptionStatus = async () => {
-      if (!isLoggedIn || !currentUserAddress || !creatorId) {
+      if (!isLoggedIn || !currentUserAddress || !actualCreatorId) {
         setIsSubscribed(false);
         return;
       }
@@ -191,7 +225,7 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
         setCheckingSubscription(true);
         const viewerProfile = await getUserProfile(currentUserAddress);
         if (viewerProfile && viewerProfile.Channels) {
-          const isSubscribedToCreator = viewerProfile.Channels.includes(creatorId);
+          const isSubscribedToCreator = viewerProfile.Channels.includes(actualCreatorId);
           setIsSubscribed(isSubscribedToCreator);
         } else {
           setIsSubscribed(false);
@@ -205,7 +239,7 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
     };
 
     checkSubscriptionStatus();
-  }, [isLoggedIn, currentUserAddress, creatorId]);
+  }, [isLoggedIn, currentUserAddress, actualCreatorId]);
 
   // Helper function to parse socialLinks from stream data
   const parseSocialLinks = (socialLinksArray: string[] | null | undefined): { twitter?: string; instagram?: string; youtube?: string; website?: string } => {
@@ -243,11 +277,34 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
     const fetchCreatorProfile = async () => {
       try {
         setLoading(true);
-        const supabaseUser = await getUserProfile(creatorId);
+        
+        // First, try to get user by username (displayName)
+        // The creatorId param is now the username from the URL
+        let supabaseUser = await getUserProfileByUsername(creatorId);
+        let walletAddress = null;
+        
+        // If not found by username, try as wallet address (for backward compatibility)
+        if (!supabaseUser) {
+          supabaseUser = await getUserProfile(creatorId);
+          if (supabaseUser) {
+            walletAddress = supabaseUser.creatorId;
+          }
+        } else {
+          walletAddress = supabaseUser.creatorId;
+        }
+        
+        if (!walletAddress) {
+          setError('Profile not found');
+          setLoading(false);
+          return;
+        }
+        
+        // Store the actual creatorId (wallet address) for use in other parts
+        setActualCreatorId(walletAddress);
         
         // Fetch stream data for the channel display (bio and socialLinks are in stream table)
         try {
-          const streams = await getStreamsByCreator(creatorId);
+          const streams = await getStreamsByCreator(walletAddress);
           if (streams && streams.length > 0) {
             setCreatorStreamData(streams[0]);
           }
@@ -331,21 +388,21 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
   // Fetch streams and assets for this creator
   useEffect(() => {
-    if (creatorId) {
+    if (actualCreatorId) {
       dispatch(getAllStreams());
       dispatch(getAssets());
     }
-  }, [dispatch, creatorId]);
+  }, [dispatch, actualCreatorId]);
 
   // Filter streams and assets for this creator
   const creatorStreams = streams.filter((stream: Stream) => 
-    stream.creatorId?.value === creatorId && !!stream.playbackId
+    stream.creatorId?.value === actualCreatorId && !!stream.playbackId
   );
 
 // console.log('creatorStreams', creatorStreams);
 
   const creatorAssets = assets.filter((asset: Asset) => 
-    asset.creatorId?.value === creatorId && !!asset.playbackId
+    asset.creatorId?.value === actualCreatorId && !!asset.playbackId
   );
 
   // Handle errors
@@ -414,7 +471,11 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
     setIsSubscribing(true);
     try {
-      await subscribeToCreator(currentUserAddress, creatorId);
+      if (!actualCreatorId) {
+        toast.error('Creator not found');
+        return;
+      }
+      await subscribeToCreator(currentUserAddress, actualCreatorId);
       setIsSubscribed(true);
       toast.success(`Subscribed to ${creatorProfile?.displayName || creatorStreamData?.title || 'creator'}!`);
     } catch (err: any) {
@@ -434,7 +495,11 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
     setIsSubscribing(true);
     try {
-      await unsubscribeFromCreator(currentUserAddress, creatorId);
+      if (!actualCreatorId) {
+        toast.error('Creator not found');
+        return;
+      }
+      await unsubscribeFromCreator(currentUserAddress, actualCreatorId);
       setIsSubscribed(false);
       toast.success(`Unsubscribed from ${creatorProfile?.displayName || creatorStreamData?.title || 'creator'}`);
     } catch (err: any) {
@@ -629,7 +694,13 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
 
               {/* Videos Tab */}
               <TabsContent value="videos" className="mt-4">
-            {assetsLoading ? (
+                {selectedVideoForViewing ? (
+                  <VideoPlayerView
+                    playbackId={selectedVideoForViewing.playbackId}
+                    title={selectedVideoForViewing.title}
+                    onClose={() => setSelectedVideoForViewing(null)}
+                  />
+                ) : assetsLoading ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array.from({ length: 6 }, (_, index) => (
                       <div key={index} className="flex flex-col space-y-3">
@@ -646,19 +717,27 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
                     {creatorAssets.length === 0 ? (
                       <div className="flex justify-center items-center h-60">
                         <p className="text-gray-300">No Videos Available.</p>
-              </div>
+                      </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {creatorAssets.map((asset) => (
                           <div key={asset.id}>
-                <VideoCard
-                  title={asset.name}
-                  assetData={asset}
-                  imageUrl={image1}
-                  playbackId={asset.playbackId}
-                  createdAt={new Date(asset.createdAt)}
-                  format={asset.videoSpec?.format}
-                />
+                            <VideoCard
+                              title={asset.name}
+                              assetData={asset}
+                              imageUrl={image1}
+                              playbackId={asset.playbackId}
+                              createdAt={new Date(asset.createdAt)}
+                              format={asset.videoSpec?.format}
+                              onPlayClick={() => {
+                                if (asset.playbackId) {
+                                  setSelectedVideoForViewing({
+                                    playbackId: asset.playbackId,
+                                    title: asset.name || 'Video',
+                                  });
+                                }
+                              }}
+                            />
                           </div>
                         ))}
                       </div>
@@ -673,7 +752,7 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
                   <StreamPlayerView
                     playbackId={selectedStreamForViewing.playbackId}
                     title={selectedStreamForViewing.title}
-                    creatorId={creatorId}
+                    creatorId={actualCreatorId || ''}
                     onClose={() => setSelectedStreamForViewing(null)}
                   />
                 ) : streamsLoading ? (
