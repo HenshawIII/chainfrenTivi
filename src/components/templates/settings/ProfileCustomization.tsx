@@ -591,7 +591,7 @@ export function ProfileCustomization() {
         )}
 
         {/* Record Option */}
-        <div>
+        {/* <div>
           <label className="block text-sm font-medium mb-1 text-white">Record Stream?</label>
           <select
             value={streamData.record ? 'yes' : 'no'}
@@ -601,7 +601,7 @@ export function ProfileCustomization() {
             <option value="no">No</option>
             <option value="yes">Yes</option>
           </select>
-        </div>
+        </div> */}
 
         {/* Donation Presets */}
         <div>

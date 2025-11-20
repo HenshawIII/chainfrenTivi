@@ -11,6 +11,9 @@ export interface SupabaseStream {
   description: string | null;
   amount: number | null;
   streamName: string;
+  streamMode?: 'free' | 'one-time' | 'monthly' | null; // Stream mode for session
+  streamAmount?: number | null; // Amount for one-time or monthly streams
+  Record?: boolean | null; // Whether to record the stream
   creatorId: string;
   logo: string | null;
   title: string | null;

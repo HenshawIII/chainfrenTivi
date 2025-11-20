@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { FaSackDollar } from 'react-icons/fa6';
 import { IoNotificationsOutline } from 'react-icons/io5';
 import { TbHomeFilled } from 'react-icons/tb';
-import { FaRegUserCircle } from 'react-icons/fa';
+// import { FaRegUserCircle } from 'react-icons/fa';
+import { IoSettings } from 'react-icons/io5';
 
 const BottomNav = () => {
 
@@ -24,9 +25,9 @@ const BottomNav = () => {
       icon: TbHomeFilled,
     },
     {
-      name: 'Profile',
+      name: 'Settings',
       href: '/dashboard/settings',
-      icon: FaRegUserCircle,
+      icon: IoSettings,
     },
   ];
 

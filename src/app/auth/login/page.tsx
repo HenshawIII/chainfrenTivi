@@ -24,7 +24,7 @@ const LoginPage = () => {
   // Render a spinner until the auth process or navigation occurs
   return (
     <AuthLayout>
-      <div className="flex justify-center items-center h-screen">
+      <div className="flex justify-center bg-black items-center h-screen">
         <Spinner />
       </div>
     </AuthLayout>

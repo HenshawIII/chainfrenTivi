@@ -32,6 +32,7 @@ import { PlayerWithControls } from '@/components/templates/player/player/Player'
 import { usePlaybackInfo } from '@/app/hook/usePlaybckInfo';
 import { PlayerLoading } from '@/components/templates/player/player/Player';
 import { VideoPlayer } from '@/components/templates/dashboard/VideoPlayer';
+import { CreatorPaymentGate } from '@/components/CreatorPaymentGate';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -560,6 +561,15 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
       </aside>
 
       {/* Main Content */}
+      <CreatorPaymentGate
+        creatorId={actualCreatorId || creatorId}
+        viewMode={creatorStreamData?.viewMode || 'free'}
+        amount={creatorStreamData?.amount || 0}
+        streamName={creatorStreamData?.streamName || creatorStreamData?.title}
+        onPaymentSuccess={() => {
+          // Payment successful - component will automatically show content
+        }}
+      >
       <div className="flex-1 flex flex-col gap-4 h-screen overflow-hidden relative">
         <div className="flex-1 flex gap-4 overflow-hidden">
           <div className="flex-1 my-2 ml-2 flex flex-col relative">
@@ -870,6 +880,7 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
           </div>
         </div>
       </div>
+      </CreatorPaymentGate>
     </div>
   );
 }

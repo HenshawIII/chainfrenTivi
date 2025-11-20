@@ -26,9 +26,11 @@ import { ProfileColumn } from './ProfileColumn';
 import BottomNav from '@/components/BottomNav';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { UserSetupModal } from '@/components/UserSetupModal';
-import { getUserProfile } from '@/lib/supabase-service';
+import { getUserProfile, getStreamsByCreator } from '@/lib/supabase-service';
 import { BroadcastWithControls } from '@/components/templates/stream/broadcast/Broadcast';
 import { getStreamById } from '@/features/streamAPI';
+import { VideoPlayer } from '@/components/templates/dashboard/VideoPlayer';
+import { StreamSetupModal } from '@/components/StreamSetupModal';
 
 const Dashboard = () => {
   const { user, ready, authenticated } = usePrivy();
@@ -43,6 +45,13 @@ const Dashboard = () => {
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
+  const [selectedVideoForViewing, setSelectedVideoForViewing] = useState<{
+    playbackId: string;
+    title: string;
+  } | null>(null);
+  const [showStreamSetupModal, setShowStreamSetupModal] = useState(false);
+  const [pendingStreamId, setPendingStreamId] = useState<string | null>(null);
+  const [streamForSetup, setStreamForSetup] = useState<any>(null);
   
   // Get channelId from URL query params (for navigation from outside dashboard)
   const urlChannelId = searchParams?.get('channelId');
@@ -204,19 +213,118 @@ const filteredAssetsForChannel = useMemo(() => {
   // NEW: only when not loading, no error, and zero existing streams
   const canCreateStream = !streamsLoading && !streamsError && filteredStreams.length === 0;
 
+  // Fetch stream data for setup modal
+  useEffect(() => {
+    const fetchStreamForSetup = async () => {
+      if (!pendingStreamId || !creatorAddress) return;
+      
+      try {
+        // First try to find in Redux state by id
+        let stream = filteredStreams.find(s => s.id === pendingStreamId);
+        let playbackId = stream?.playbackId;
+        
+        // Fetch from Supabase to get full stream data
+        const streams = await getStreamsByCreator(creatorAddress);
+        let supabaseStream = null;
+        
+        if (stream && playbackId) {
+          // Find by playbackId
+          supabaseStream = streams.find(s => s.playbackId === playbackId);
+        } else {
+          // Try to find by pendingStreamId (could be id or playbackId)
+          supabaseStream = streams.find(s => s.playbackId === pendingStreamId || s.id === pendingStreamId);
+          if (supabaseStream) {
+            playbackId = supabaseStream.playbackId;
+          }
+        }
+        
+          if (supabaseStream) {
+            setStreamForSetup({
+              playbackId: supabaseStream.playbackId,
+              streamName: supabaseStream.streamName || '',
+              streamMode: supabaseStream.streamMode || null,
+              streamAmount: supabaseStream.streamAmount || null,
+              Record: supabaseStream.Record ?? null,
+            });
+          } else if (stream && playbackId) {
+            // Stream exists in Redux but not in Supabase yet - use Redux data
+            setStreamForSetup({
+              playbackId: playbackId,
+              streamName: stream.name || stream.title || '',
+              streamMode: null,
+              streamAmount: null,
+              Record: null,
+            });
+          } else {
+            // If stream not found, still show modal with empty values
+            // Try to use pendingStreamId as playbackId (it might be the playbackId)
+            setStreamForSetup({
+              playbackId: pendingStreamId,
+              streamName: '',
+              streamMode: null,
+              streamAmount: null,
+              Record: null,
+            });
+          }
+      } catch (error) {
+        console.error('Error fetching stream for setup:', error);
+        // Still show modal with empty values
+        setStreamForSetup({
+          playbackId: pendingStreamId,
+          streamName: '',
+          streamMode: null,
+          streamAmount: null,
+          Record: null,
+        });
+      }
+    };
+
+    if (showStreamSetupModal && pendingStreamId) {
+      fetchStreamForSetup();
+    }
+  }, [showStreamSetupModal, pendingStreamId, creatorAddress, filteredStreams]);
+
   const initiateLiveVideo = async (id: string) => {
     if (!id) return;
     
+    // Find the stream to get its playbackId
+    const stream = filteredStreams.find(s => s.id === id);
+    if (!stream || !stream.playbackId) {
+      toast.error('Stream not found');
+      return;
+    }
+    
+    // Show setup modal first with stream id (we'll get playbackId in the modal)
+    setPendingStreamId(id);
+    setShowStreamSetupModal(true);
+  };
+
+  const handleStreamSetupConfirm = async () => {
+    if (!pendingStreamId) return;
+    
     try {
+      // Find stream to get its id for getStreamById
+      const stream = filteredStreams.find(s => s.id === pendingStreamId);
+      if (!stream) {
+        toast.error('Stream not found');
+        setShowStreamSetupModal(false);
+        return;
+      }
+      
       // Fetch stream details
-      await dispatch(getStreamById(id));
-      setActiveStreamId(id);
+      await dispatch(getStreamById(stream.id));
+      setActiveStreamId(stream.id);
       setIsStreaming(true);
       // Switch to livestreams tab
       setActiveTab('livestreams');
+      // Close modal
+      setShowStreamSetupModal(false);
+      setPendingStreamId(null);
+      setStreamForSetup(null);
     } catch (error: any) {
       console.error('Error fetching stream:', error);
       toast.error('Failed to start stream. Please try again.');
+      setShowStreamSetupModal(false);
     }
   };
 
@@ -266,6 +374,16 @@ const filteredAssetsForChannel = useMemo(() => {
         }}
         onSuccess={handleProfileSetupSuccess}
         isFirstTime={isFirstTimeUser}
+      />
+      <StreamSetupModal
+        open={showStreamSetupModal}
+        onClose={() => {
+          setShowStreamSetupModal(false);
+          setPendingStreamId(null);
+          setStreamForSetup(null);
+        }}
+        onConfirm={handleStreamSetupConfirm}
+        stream={streamForSetup}
       />
     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-black via-gray-950 to-black">
       {/* Mobile Sidebar */}
@@ -362,7 +480,22 @@ const filteredAssetsForChannel = useMemo(() => {
 
                   {/* Videos Tab */}
                   <TabsContent value="videos" className="mt-4">
-                    {assetsLoading ? (
+                    {selectedVideoForViewing ? (
+                      <div className="w-full">
+                        <div className="mb-4 flex items-center justify-between">
+                          <h3 className="text-white font-bold text-lg">{selectedVideoForViewing.title}</h3>
+                          <button
+                            onClick={() => setSelectedVideoForViewing(null)}
+                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm font-semibold"
+                          >
+                            Close Player
+                          </button>
+                        </div>
+                        <div className="w-full border border-white/20 rounded-lg overflow-hidden bg-black" style={{ minHeight: '600px', height: 'calc(100vh - 400px)' }}>
+                          <VideoPlayer playbackId={selectedVideoForViewing.playbackId} />
+                        </div>
+                      </div>
+                    ) : assetsLoading ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Array.from({ length: 6 }, (_, index) => (
                           <div key={index} className="flex flex-col space-y-3">
@@ -422,6 +555,14 @@ const filteredAssetsForChannel = useMemo(() => {
                                   playbackId={asset.playbackId}
                                   createdAt={new Date(asset.createdAt)}
                                   format={(asset as any).videoSpec?.format}
+                                  onPlayClick={() => {
+                                    if (asset.playbackId) {
+                                      setSelectedVideoForViewing({
+                                        playbackId: asset.playbackId,
+                                        title: asset.name || 'Video',
+                                      });
+                                    }
+                                  }}
                                 />
                               </div>
                             ))}
