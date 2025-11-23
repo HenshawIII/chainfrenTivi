@@ -38,6 +38,35 @@ const nextConfig = {
       },
     ],
   },
+  webpack: (config, { webpack }) => {
+    // Handle Solana packages that are transitive dependencies from x402 (via Privy)
+    // Since we're using Ethereum-only wallets (walletChainType: 'ethereum-only'), 
+    // we don't need Solana functionality
+    // Replace problematic Solana imports with an empty module to prevent build errors
+    
+    const path = require('path');
+    
+    // Replace @solana/kit imports with our empty module
+    // This works for both direct imports and imports from compute-budget
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /^@solana\/kit$/,
+        (resource) => {
+          // Always replace @solana/kit with our empty module
+          // This prevents the "isDurableNonceTransaction is not exported" error
+          resource.request = path.resolve(__dirname, 'src/lib/empty-module.js');
+        }
+      )
+    );
+    
+    // Also use resolve.alias as a fallback for better compatibility
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@solana/kit': path.resolve(__dirname, 'src/lib/empty-module.js'),
+    };
+    
+    return config;
+  },
 };
 
 export default nextConfig;
