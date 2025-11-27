@@ -11,8 +11,8 @@ import { RiEditFill } from 'react-icons/ri';
 import { TbHomeFilled } from 'react-icons/tb';
 import { usePrivy } from '@privy-io/react-auth';
 import { useEffect, useState, useMemo } from 'react';
-import { getSubscribedChannels, getStreamsByCreator, getUserProfile } from '@/lib/supabase-service';
-import { SupabaseStream } from '@/lib/supabase-types';
+import { getSubscribedChannels, getStreamsByCreator, getUserProfile, getUserProfileByUsername, subscribeToCreator } from '@/lib/supabase-service';
+import { SupabaseStream, SupabaseUser } from '@/lib/supabase-types';
 import { useChannel } from '@/context/ChannelContext';
 import {
   AlertDialog,
@@ -25,6 +25,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { HiPlus } from 'react-icons/hi';
+import { toast } from 'sonner';
+import { Bars } from 'react-loader-spinner';
 
 interface SidebarProps {
   sidebarCollapsed?: boolean;
@@ -43,6 +45,13 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
   const [loadingOwnedChannels, setLoadingOwnedChannels] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [creatorIdToUsername, setCreatorIdToUsername] = useState<Record<string, string>>({});
+  const [showAddChannelModal, setShowAddChannelModal] = useState(false);
+  const [channelUrl, setChannelUrl] = useState('');
+  const [isValidatingUrl, setIsValidatingUrl] = useState(false);
+  const [foundCreator, setFoundCreator] = useState<SupabaseUser | null>(null);
+  const [foundChannel, setFoundChannel] = useState<SupabaseStream | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   // Get current user's wallet address
   // First try to use the login method if it's a wallet, otherwise find a wallet from linked accounts
@@ -135,7 +144,142 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
       setShowSignupModal(true);
       return;
     }
-    router.push('/streamviews');
+    setShowAddChannelModal(true);
+  };
+
+  // Parse URL to extract creator identifier
+  const parseCreatorUrl = (url: string): string | null => {
+    try {
+      // Remove any trailing slashes and whitespace
+      const cleanUrl = url.trim().replace(/\/$/, '');
+      
+      // Match pattern: /creator/[id] or /creator/[id]/
+      const match = cleanUrl.match(/\/creator\/([^\/\?]+)/);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]);
+      }
+      
+      // If it's just the ID without the full URL, return it
+      if (!cleanUrl.includes('/')) {
+        return cleanUrl;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error parsing URL:', error);
+      return null;
+    }
+  };
+
+  // Validate and fetch creator profile
+  const handleValidateUrl = async () => {
+    if (!channelUrl.trim()) {
+      toast.error('Please enter a channel URL');
+      return;
+    }
+
+    setIsValidatingUrl(true);
+    setFoundCreator(null);
+    setFoundChannel(null);
+
+    try {
+      const creatorIdentifier = parseCreatorUrl(channelUrl);
+      
+      if (!creatorIdentifier) {
+        toast.error('Invalid URL format. Please use: /creator/[id] or https://origin/creator/[id]');
+        setIsValidatingUrl(false);
+        return;
+      }
+
+      // Try to get user profile by username first, then by wallet address
+      let creatorProfile: SupabaseUser | null = null;
+      
+      try {
+        creatorProfile = await getUserProfileByUsername(creatorIdentifier);
+      } catch (error) {
+        // If username lookup fails, try wallet address
+        try {
+          creatorProfile = await getUserProfile(creatorIdentifier);
+        } catch (err) {
+          console.error('Error fetching creator profile:', err);
+        }
+      }
+
+      if (!creatorProfile) {
+        toast.error('Creator profile not found. Please check the URL.');
+        setIsValidatingUrl(false);
+        return;
+      }
+
+      // Get the actual creatorId (wallet address)
+      const actualCreatorId = creatorProfile.creatorId;
+
+      // Check if user is trying to subscribe to themselves
+      if (currentUserAddress && currentUserAddress.toLowerCase() === actualCreatorId.toLowerCase()) {
+        toast.error('You cannot subscribe to your own channel');
+        setIsValidatingUrl(false);
+        return;
+      }
+
+      // Check if already subscribed
+      const currentChannels = subscribedChannels.map(ch => ch.creatorId);
+      if (currentChannels.includes(actualCreatorId)) {
+        toast.error('You are already subscribed to this channel');
+        setIsValidatingUrl(false);
+        return;
+      }
+
+      // Fetch channel details
+      const channels = await getStreamsByCreator(actualCreatorId);
+      const channel = channels && channels.length > 0 ? channels[0] : null;
+
+      setFoundCreator(creatorProfile);
+      setFoundChannel(channel);
+      setShowAddChannelModal(false);
+      setShowConfirmModal(true);
+    } catch (error: any) {
+      console.error('Error validating URL:', error);
+      toast.error(error.message || 'Failed to validate URL. Please try again.');
+    } finally {
+      setIsValidatingUrl(false);
+    }
+  };
+
+  // Handle subscription confirmation
+  const handleConfirmSubscribe = async () => {
+    if (!foundCreator || !currentUserAddress) {
+      toast.error('Missing required information');
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      await subscribeToCreator(currentUserAddress, foundCreator.creatorId);
+      toast.success(`Subscribed to ${foundCreator.displayName || foundChannel?.title || 'channel'}!`);
+      
+      // Refresh subscribed channels
+      const channels = await getSubscribedChannels(currentUserAddress);
+      setSubscribedChannels(channels);
+      
+      // Update username map
+      if (foundCreator.displayName) {
+        setCreatorIdToUsername(prev => ({
+          ...prev,
+          [foundCreator!.creatorId]: foundCreator!.displayName!
+        }));
+      }
+      
+      // Reset state
+      setChannelUrl('');
+      setFoundCreator(null);
+      setFoundChannel(null);
+      setShowConfirmModal(false);
+    } catch (error: any) {
+      console.error('Error subscribing:', error);
+      toast.error(error.message || 'Failed to subscribe. Please try again.');
+    } finally {
+      setIsSubscribing(false);
+    }
   };
 
   const handleSignup = () => {
@@ -291,6 +435,133 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
               className="bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black"
             >
               Sign In
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add Channel Modal */}
+      <AlertDialog open={showAddChannelModal} onOpenChange={setShowAddChannelModal}>
+        <AlertDialogContent className="bg-gray-900 border border-white/20">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Add Channel</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              Enter the creator profile URL to subscribe to their channel.
+              <br />
+              Format: <span className="text-yellow-400">/creator/[id]</span> or <span className="text-yellow-400">https://origin/creator/[id]</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <input
+              type="text"
+              value={channelUrl}
+              onChange={(e) => setChannelUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isValidatingUrl) {
+                  handleValidateUrl();
+                }
+              }}
+              placeholder="e.g., /creator/username or https://example.com/creator/username"
+              className="w-full px-4 py-2 bg-black/50 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              disabled={isValidatingUrl}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => {
+                setShowAddChannelModal(false);
+                setChannelUrl('');
+              }}
+              className="bg-gray-700 text-white hover:bg-gray-600"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleValidateUrl}
+              disabled={isValidatingUrl || !channelUrl.trim()}
+              className="bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isValidatingUrl ? (
+                <div className="flex items-center gap-2">
+                  <Bars width={14} height={14} color="#000000" />
+                  <span>Validating...</span>
+                </div>
+              ) : (
+                'Validate'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Modal */}
+      <AlertDialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <AlertDialogContent className="bg-gray-900 border border-white/20">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Confirm Subscription</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              Do you want to subscribe to this channel?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {foundCreator && (
+            <div className="py-4 space-y-3">
+              <div className="flex items-center gap-3">
+                {foundChannel?.logo ? (
+                  <img
+                    src={foundChannel.logo}
+                    alt={foundChannel.title || foundChannel.streamName || 'Channel'}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : foundCreator.avatar ? (
+                  <img
+                    src={foundCreator.avatar}
+                    alt={foundCreator.displayName || 'Creator'}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-yellow-500 to-teal-500 flex items-center justify-center text-black text-sm font-bold">
+                    {((foundCreator.displayName || foundChannel?.title || foundCreator.creatorId)?.slice(0, 2) || '??').toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <p className="text-white font-semibold">
+                    {foundChannel?.title || foundChannel?.streamName || foundCreator.displayName || 'Untitled Channel'}
+                  </p>
+                  {foundCreator.displayName && (
+                    <p className="text-gray-400 text-sm">by {foundCreator.displayName}</p>
+                  )}
+                </div>
+              </div>
+              {foundChannel?.description && (
+                <p className="text-gray-300 text-sm">{foundChannel.description}</p>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => {
+                setShowConfirmModal(false);
+                setFoundCreator(null);
+                setFoundChannel(null);
+                setChannelUrl('');
+              }}
+              className="bg-gray-700 text-white hover:bg-gray-600"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmSubscribe}
+              disabled={isSubscribing}
+              className="bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubscribing ? (
+                <div className="flex items-center gap-2">
+                  <Bars width={14} height={14} color="#000000" />
+                  <span>Subscribing...</span>
+                </div>
+              ) : (
+                'Subscribe'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
