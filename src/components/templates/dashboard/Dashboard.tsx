@@ -31,6 +31,7 @@ import { DashboardBroadcast } from '@/components/templates/dashboard/DashboardBr
 import { getStreamById } from '@/features/streamAPI';
 import { VideoPlayer } from '@/components/templates/dashboard/VideoPlayer';
 import { StreamSetupModal } from '@/components/StreamSetupModal';
+import Link from 'next/link';
 
 const Dashboard = () => {
   const { user, ready, authenticated } = usePrivy();
@@ -676,7 +677,48 @@ const filteredAssetsForChannel = useMemo(() => {
         
           {/* Third Column - Profile Column */}
           <div className="hidden lg:block flex-shrink-0 pt-2 pr-2">
-            <ProfileColumn />
+            {ready && authenticated ? (
+              // Logged in: Show ProfileColumn component
+              <ProfileColumn />
+            ) : (
+              // Not logged in: Show login prompts
+              <div className="w-[400px] p-4 px-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg space-y-4">
+                <div className="text-center space-y-4">
+                  {/* Icon */}
+                  <div className="flex justify-center">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-r from-yellow-500/30 to-teal-500/30 flex items-center justify-center border-2 border-yellow-400">
+                      <svg className="w-12 h-12 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <h3 className="text-white font-semibold text-lg">Join ChainfrenTV</h3>
+                    <p className="text-gray-400 text-sm">
+                      Sign in to access your profile, manage your content, and interact with creators.
+                    </p>
+                  </div>
+
+                  {/* Login Button */}
+                  <Link
+                    href="/auth/login"
+                    className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gradient-to-r from-yellow-500 to-teal-500 hover:from-yellow-600 hover:to-teal-600 text-black rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Sign In
+                  </Link>
+
+                  {/* Additional Info */}
+                  <p className="text-gray-500 text-xs mt-4">
+                    New to ChainfrenTV? Signing in will create your account automatically.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         
