@@ -27,7 +27,7 @@ import BottomNav from '@/components/BottomNav';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { UserSetupModal } from '@/components/UserSetupModal';
 import { getUserProfile, getStreamsByCreator } from '@/lib/supabase-service';
-import { BroadcastWithControls } from '@/components/templates/stream/broadcast/Broadcast';
+import { DashboardBroadcast } from '@/components/templates/dashboard/DashboardBroadcast';
 import { getStreamById } from '@/features/streamAPI';
 import { VideoPlayer } from '@/components/templates/dashboard/VideoPlayer';
 import { StreamSetupModal } from '@/components/StreamSetupModal';
@@ -605,27 +605,16 @@ const filteredAssetsForChannel = useMemo(() => {
                   </TabsContent>
 
                   {/* Livestreams Tab */}
-                  <TabsContent value="livestreams" className="mt-4">
+                  <TabsContent value="livestreams" className="mt-4 -mx-3 md:-mx-6 -mb-4 md:-mb-10">
                     {isStreaming && activeStreamData ? (
-                      <div className="w-full">
-                        <div className="mb-4 flex items-center justify-between">
-                          <h3 className="text-white font-bold text-lg">Live Broadcast</h3>
-                          <button
-                            onClick={handleStopStreaming}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-semibold"
-                          >
-                            Stop Streaming
-                          </button>
-                        </div>
-                        <div className="w-full border border-white/20 rounded-lg overflow-hidden bg-black" style={{ minHeight: '600px', height: 'calc(100vh - 400px)' }}>
-                          <BroadcastWithControls
-                            streamName={activeStreamData.name}
-                            streamKey={activeStreamData.streamKey}
-                            playbackId={activeStreamData.playbackId}
-                            isActive={activeStreamData.isActive}
-                            createdAt={activeStreamData.createdAt}
-                          />
-                        </div>
+                      <div className="w-[calc(100%+1.5rem)] md:w-[calc(100%+3rem)] border border-white/20 rounded-lg overflow-hidden bg-black" style={{ minHeight: '600px', height: 'calc(100vh - 400px)' }}>
+                        <DashboardBroadcast
+                          streamName={activeStreamData.name}
+                          streamKey={activeStreamData.streamKey}
+                          playbackId={activeStreamData.playbackId}
+                          creatorAddress={creatorAddress || ''}
+                          onStreamEnd={handleStopStreaming}
+                        />
                       </div>
                     ) : streamsLoading ? (
                       Array.from({ length: 1 }, (_, index) => (

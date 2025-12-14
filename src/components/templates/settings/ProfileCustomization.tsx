@@ -733,7 +733,7 @@ export function ProfileCustomization() {
               <span>Saving...</span>
             </div>
           ) : (
-            'Save Profile'
+            'Save'
           )}
         </button>
       </div>

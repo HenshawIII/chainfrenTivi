@@ -107,7 +107,7 @@ const Header = ({ toggleMenu, mobileOpen, title }: { toggleMenu: () => void; mob
                     onClick={handleLogout}
                   >
                     <MdOutlineLogout className="text-xl text-red-400" />
-                    <p className="text-red-400 font-medium ">Logout</p>
+                    <p className="text-red-400 font-medium ">Sign Out</p>
                   </DropdownMenu.Item>
                   {/* <hr className="my-3 border-[1px] border-white/20 " /> */}
                 </DropdownMenu.Content>

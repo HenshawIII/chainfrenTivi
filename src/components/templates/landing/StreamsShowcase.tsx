@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { getAllCreators, getStreamsByCreator } from '@/lib/supabase-service';
+import { getAllStreams, getUserProfile } from '@/lib/supabase-service';
 import { SupabaseUser, SupabaseStream } from '@/lib/supabase-types';
 import Spinner from '@/components/Spinner';
 import { FaSearch } from 'react-icons/fa';
@@ -14,7 +14,7 @@ interface StreamsShowcaseProps {
 
 interface CreatorWithChannel {
   creator: SupabaseUser;
-  channel: SupabaseStream | null; // First/most recent stream for this creator
+  channel: SupabaseStream; // Most recent stream for this creator
 }
 
 export default function StreamsShowcase({ streams, loading }: StreamsShowcaseProps) {
@@ -22,49 +22,68 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
   const [loadingCreators, setLoadingCreators] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch all creators and their channels from Supabase
+  // Fetch all streams (source of truth) and get creator info for each
   useEffect(() => {
-    const fetchCreatorsWithChannels = async () => {
+    const fetchChannelsWithCreators = async () => {
       setLoadingCreators(true);
       try {
-        // Get all creators
-        const creators = await getAllCreators();
+        // Get all streams from streams table (source of truth)
+        const allStreams = await getAllStreams();
         
-        // For each creator, get their streams and use the most recent one
+        // Group streams by creatorId and get the most recent stream per creator
+        const streamsByCreator = new Map<string, SupabaseStream>();
+        
+        allStreams.forEach((stream) => {
+          if (!stream.creatorId) return; // Skip streams without creatorId
+          
+          const existingStream = streamsByCreator.get(stream.creatorId);
+          if (!existingStream) {
+            // First stream for this creator
+            streamsByCreator.set(stream.creatorId, stream);
+          } else {
+            // Compare dates to keep the most recent one
+            const existingDate = existingStream.created_at ? new Date(existingStream.created_at).getTime() : 0;
+            const currentDate = stream.created_at ? new Date(stream.created_at).getTime() : 0;
+            if (currentDate > existingDate) {
+              streamsByCreator.set(stream.creatorId, stream);
+            }
+          }
+        });
+        
+        // Fetch creator info for each unique creatorId
         const creatorsWithChannelData = await Promise.all(
-          creators.map(async (creator) => {
+          Array.from(streamsByCreator.entries()).map(async ([creatorId, channel]) => {
             try {
-              const streams = await getStreamsByCreator(creator.creatorId);
-              // Sort streams by created_at descending to get the most recent one
-              const sortedStreams = streams.sort((a, b) => {
-                const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-                const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-                return dateB - dateA; // Most recent first
-              });
-              const channel = sortedStreams && sortedStreams.length > 0 ? sortedStreams[0] : null;
+              const creator = await getUserProfile(creatorId);
+              if (!creator) {
+                // Skip if creator not found
+                return null;
+              }
               return {
                 creator,
                 channel,
               };
             } catch (error) {
-              console.error(`Failed to fetch streams for creator ${creator.creatorId}:`, error);
-              return {
-                creator,
-                channel: null,
-              };
+              console.error(`Failed to fetch creator ${creatorId}:`, error);
+              return null;
             }
           })
         );
         
-        setCreatorsWithChannels(creatorsWithChannelData);
+        // Filter out null entries (streams without valid creators)
+        const validChannels = creatorsWithChannelData.filter(
+          (item): item is CreatorWithChannel => item !== null
+        );
+        
+        setCreatorsWithChannels(validChannels);
       } catch (error) {
-        console.error('Failed to fetch creators:', error);
+        console.error('Failed to fetch channels:', error);
       } finally {
         setLoadingCreators(false);
       }
     };
 
-    fetchCreatorsWithChannels();
+    fetchChannelsWithCreators();
   }, []);
 
   // Filter creators/channels based on search query
@@ -76,7 +95,7 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
     const query = searchQuery.toLowerCase().trim();
     return creatorsWithChannels.filter(({ creator, channel }) => {
       // Get channel title
-      const channelTitle = (channel?.title || channel?.streamName || '').toLowerCase();
+      const channelTitle = (channel.title || channel.streamName || '').toLowerCase();
       // Get creator name
       const creatorName = (creator.displayName || '').toLowerCase();
       
@@ -113,15 +132,15 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
           {filteredCreatorsWithChannels.map(({ creator, channel }) => {
             const profileIdentifier = creator.displayName || creator.creatorId;
             // Use channel logo if available, otherwise fallback to creator avatar
-            const displayLogo = channel?.logo || creator.avatar;
+            const displayLogo = channel.logo || creator.avatar;
             // Use channel title/streamName if available
-            const channelTitle = channel?.title || channel?.streamName || 'Untitled Channel';
+            const channelTitle = channel.title || channel.streamName || 'Untitled Channel';
             // Creator display name
             const creatorName = creator.displayName || `${creator.creatorId.slice(0, 5)}...${creator.creatorId.slice(-5)}`;
             
             return (
               <Link
-                key={creator.creatorId}
+                key={`${creator.creatorId}-${channel.playbackId || channel.id}`}
                 href={`/creator/${encodeURIComponent(profileIdentifier)}`}
                 className="block bg-white/10 rounded-lg overflow-hidden shadow-lg hover:scale-105 transition-transform"
               >
@@ -149,8 +168,8 @@ export default function StreamsShowcase({ streams, loading }: StreamsShowcasePro
                   <p className="text-xs text-yellow-300 mb-1">
                     by {creatorName}
                   </p>
-                  {creator.bio && (
-                    <p className="text-xs text-gray-400 line-clamp-2">{creator.bio}</p>
+                  {channel.description && (
+                    <p className="text-xs text-gray-400 line-clamp-2">{channel.description}</p>
                   )}
                 </div>
               </Link>

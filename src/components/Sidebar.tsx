@@ -30,9 +30,11 @@ import { Bars } from 'react-loader-spinner';
 
 interface SidebarProps {
   sidebarCollapsed?: boolean;
+  isInstallable?: boolean;
+  onInstallClick?: () => void;
 }
 
-const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
+const Sidebar = ({ sidebarCollapsed, isInstallable, onInstallClick }: SidebarProps) => {
   const pathname = usePathname();
   const router = useRouter();
   const { user, authenticated, ready } = usePrivy();
@@ -402,6 +404,22 @@ const Sidebar = ({ sidebarCollapsed }: SidebarProps) => {
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* PWA Install Button - Only show on creator profile pages */}
+      {!sidebarCollapsed && isInstallable && onInstallClick && (
+        <div className="w-full mt-12">
+          <button
+            onClick={onInstallClick}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-md transition-all duration-200 text-sm font-semibold"
+            title="Install as PWA"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span>Add to Home Screen</span>
+          </button>
         </div>
       )}
 

@@ -650,7 +650,11 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
             )}
           </button>
         </div>
-        <Sidebar sidebarCollapsed={sidebarCollapsed} />
+        <Sidebar 
+          sidebarCollapsed={sidebarCollapsed} 
+          isInstallable={isInstallable}
+          onInstallClick={handleInstallClick}
+        />
         
         {/* Bottom Links Section - Fixed at bottom of screen */}
         <div className={clsx(
@@ -813,19 +817,6 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
                         </div>
                       </>
                     )}
-                    {/* PWA Install Button */}
-                    {isInstallable && (
-                      <button
-                        onClick={handleInstallClick}
-                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-lg transition-all duration-200 font-semibold text-sm flex items-center gap-2"
-                        title="Install as PWA"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                        <span>Install App</span>
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -919,14 +910,16 @@ export function CreatorProfile({ creatorId }: CreatorProfileProps) {
               </TabsContent>
 
               {/* Livestreams Tab */}
-              <TabsContent value="livestreams" className="mt-4">
+              <TabsContent value="livestreams" className="mt-4 -mx-3 md:-mx-6 -mb-4 md:-mb-10">
                 {selectedStreamForViewing ? (
-                  <StreamPlayerView
-                    playbackId={selectedStreamForViewing.playbackId}
-                    title={selectedStreamForViewing.title}
-                    creatorId={actualCreatorId || ''}
-                    onClose={() => setSelectedStreamForViewing(null)}
-                  />
+                  <div className="w-[calc(100%+1.5rem)] md:w-[calc(100%+3rem)]">
+                    <StreamPlayerView
+                      playbackId={selectedStreamForViewing.playbackId}
+                      title={selectedStreamForViewing.title}
+                      creatorId={actualCreatorId || ''}
+                      onClose={() => setSelectedStreamForViewing(null)}
+                    />
+                  </div>
                 ) : streamsLoading ? (
                   Array.from({ length: 1 }, (_, index) => (
                     <div key={index} className="flex flex-col space-y-3">
